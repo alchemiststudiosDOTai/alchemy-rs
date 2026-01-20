@@ -16,7 +16,7 @@ pub struct UserMessage {
     #[serde(deserialize_with = "deserialize_user_content")]
     pub content: UserContent,
     #[serde(default = "current_timestamp")]
-    pub timestamp: u64,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,7 +61,7 @@ pub struct AssistantMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
     #[serde(default = "current_timestamp")]
-    pub timestamp: u64,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +73,7 @@ pub struct ToolResultMessage {
     pub details: Option<serde_json::Value>,
     pub is_error: bool,
     #[serde(default = "current_timestamp")]
-    pub timestamp: u64,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,7 +83,7 @@ pub enum ToolResultContent {
     Image(ImageContent),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Context {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_prompt: Option<String>,
@@ -92,22 +92,12 @@ pub struct Context {
     pub tools: Option<Vec<Tool>>,
 }
 
-impl Default for Context {
-    fn default() -> Self {
-        Self {
-            system_prompt: None,
-            messages: Vec::new(),
-            tools: None,
-        }
-    }
-}
-
-use super::usage::{StopReason, Usage};
 use super::tool::Tool;
+use super::usage::{StopReason, Usage};
 
-fn current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
+fn current_timestamp() -> i64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_millis() as i64,
+        Err(error) => -(error.duration().as_millis() as i64),
+    }
 }

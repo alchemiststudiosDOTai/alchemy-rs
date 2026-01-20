@@ -24,6 +24,7 @@ memory-bank/research/ Research and mapping docs
 - Reference the TypeScript source before implementing. File paths in `memory-bank/plan/`.
 - Small, focused diffs only. Commit frequently.
 - Run `cargo check` and `cargo clippy` before committing.
+- Never ignore warnings. Do not suppress, downgrade, or change defaults to silence them; fix the underlying issue.
 
 ## Code Style & Typing
 

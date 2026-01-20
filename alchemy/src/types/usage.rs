@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Usage {
     pub input: u32,
     pub output: u32,
@@ -8,19 +8,6 @@ pub struct Usage {
     pub cache_write: u32,
     pub total_tokens: u32,
     pub cost: Cost,
-}
-
-impl Default for Usage {
-    fn default() -> Self {
-        Self {
-            input: 0,
-            output: 0,
-            cache_read: 0,
-            cache_write: 0,
-            total_tokens: 0,
-            cost: Cost::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
