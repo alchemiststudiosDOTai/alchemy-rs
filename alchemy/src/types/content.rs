@@ -45,7 +45,11 @@ impl Content {
         }
     }
 
-    pub fn tool_call(id: impl Into<String>, name: impl Into<String>, arguments: serde_json::Value) -> Self {
+    pub fn tool_call(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: serde_json::Value,
+    ) -> Self {
         Self::ToolCall {
             inner: ToolCall {
                 id: id.into(),

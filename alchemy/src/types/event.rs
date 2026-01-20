@@ -4,18 +4,59 @@ use super::usage::StopReason;
 
 #[derive(Debug, Clone)]
 pub enum AssistantMessageEvent {
-    Start { partial: AssistantMessage },
-    TextStart { content_index: usize, partial: AssistantMessage },
-    TextDelta { content_index: usize, delta: String, partial: AssistantMessage },
-    TextEnd { content_index: usize, content: String, partial: AssistantMessage },
-    ThinkingStart { content_index: usize, partial: AssistantMessage },
-    ThinkingDelta { content_index: usize, delta: String, partial: AssistantMessage },
-    ThinkingEnd { content_index: usize, content: String, partial: AssistantMessage },
-    ToolCallStart { content_index: usize, partial: AssistantMessage },
-    ToolCallDelta { content_index: usize, delta: String, partial: AssistantMessage },
-    ToolCallEnd { content_index: usize, tool_call: ToolCall, partial: AssistantMessage },
-    Done { reason: StopReasonSuccess, message: AssistantMessage },
-    Error { reason: StopReasonError, error: AssistantMessage },
+    Start {
+        partial: AssistantMessage,
+    },
+    TextStart {
+        content_index: usize,
+        partial: AssistantMessage,
+    },
+    TextDelta {
+        content_index: usize,
+        delta: String,
+        partial: AssistantMessage,
+    },
+    TextEnd {
+        content_index: usize,
+        content: String,
+        partial: AssistantMessage,
+    },
+    ThinkingStart {
+        content_index: usize,
+        partial: AssistantMessage,
+    },
+    ThinkingDelta {
+        content_index: usize,
+        delta: String,
+        partial: AssistantMessage,
+    },
+    ThinkingEnd {
+        content_index: usize,
+        content: String,
+        partial: AssistantMessage,
+    },
+    ToolCallStart {
+        content_index: usize,
+        partial: AssistantMessage,
+    },
+    ToolCallDelta {
+        content_index: usize,
+        delta: String,
+        partial: AssistantMessage,
+    },
+    ToolCallEnd {
+        content_index: usize,
+        tool_call: ToolCall,
+        partial: AssistantMessage,
+    },
+    Done {
+        reason: StopReasonSuccess,
+        message: AssistantMessage,
+    },
+    Error {
+        reason: StopReasonError,
+        error: AssistantMessage,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

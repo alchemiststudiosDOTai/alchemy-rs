@@ -2,11 +2,21 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub trait StreamOptions: Send + Sync {
-    fn temperature(&self) -> Option<f64> { None }
-    fn max_tokens(&self) -> Option<u32> { None }
-    fn api_key(&self) -> Option<&str> { None }
-    fn session_id(&self) -> Option<&str> { None }
-    fn headers(&self) -> Option<&HashMap<String, String>> { None }
+    fn temperature(&self) -> Option<f64> {
+        None
+    }
+    fn max_tokens(&self) -> Option<u32> {
+        None
+    }
+    fn api_key(&self) -> Option<&str> {
+        None
+    }
+    fn session_id(&self) -> Option<&str> {
+        None
+    }
+    fn headers(&self) -> Option<&HashMap<String, String>> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,11 +30,21 @@ pub struct SimpleStreamOptions {
 }
 
 impl StreamOptions for SimpleStreamOptions {
-    fn temperature(&self) -> Option<f64> { self.base.temperature }
-    fn max_tokens(&self) -> Option<u32> { self.base.max_tokens }
-    fn api_key(&self) -> Option<&str> { self.base.api_key.as_deref() }
-    fn session_id(&self) -> Option<&str> { self.base.session_id.as_deref() }
-    fn headers(&self) -> Option<&HashMap<String, String>> { self.base.headers.as_ref() }
+    fn temperature(&self) -> Option<f64> {
+        self.base.temperature
+    }
+    fn max_tokens(&self) -> Option<u32> {
+        self.base.max_tokens
+    }
+    fn api_key(&self) -> Option<&str> {
+        self.base.api_key.as_deref()
+    }
+    fn session_id(&self) -> Option<&str> {
+        self.base.session_id.as_deref()
+    }
+    fn headers(&self) -> Option<&HashMap<String, String>> {
+        self.base.headers.as_ref()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

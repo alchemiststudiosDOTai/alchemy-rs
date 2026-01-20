@@ -13,8 +13,8 @@ pub use compat::{OpenAICompletionsCompat, OpenAIResponsesCompat};
 pub use content::{Content, ImageContent, TextContent, ThinkingContent, ToolCall};
 pub use event::{AssistantMessageEvent, StopReasonError, StopReasonSuccess};
 pub use message::{
-    AssistantMessage, Context, Message, ToolResultMessage, UserMessage,
-    UserContent, UserContentBlock,
+    AssistantMessage, Context, Message, ToolResultMessage, UserContent, UserContentBlock,
+    UserMessage,
 };
 pub use model::{InputType, Model};
 pub use options::{SimpleStreamOptions, StreamOptions, ThinkingLevel};

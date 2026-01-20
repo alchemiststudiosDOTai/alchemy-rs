@@ -7,10 +7,7 @@ pub enum Error {
     RequestError(#[from] reqwest::Error),
 
     #[error("API returned error: {status_code} - {message}")]
-    ApiError {
-        status_code: u16,
-        message: String,
-    },
+    ApiError { status_code: u16, message: String },
 
     #[error("Stream aborted")]
     Aborted,
@@ -22,10 +19,7 @@ pub enum Error {
     InvalidJson(#[from] serde_json::Error),
 
     #[error("Model not found: provider={provider}, model_id={model_id}")]
-    ModelNotFound {
-        provider: String,
-        model_id: String,
-    },
+    ModelNotFound { provider: String, model_id: String },
 
     #[error("Unknown provider: {0}")]
     UnknownProvider(String),
