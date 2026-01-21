@@ -1,6 +1,13 @@
 # Claude
 .claude/
 
+# Rust
+target/
+Cargo.lock
+
+# Worktree
+.worktree-meta
+
 # Python
 __pycache__/
 *.py[cod]

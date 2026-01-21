@@ -13,8 +13,8 @@ pub use compat::{MaxTokensField, OpenAICompletionsCompat, OpenAIResponsesCompat,
 pub use content::{Content, ImageContent, TextContent, ThinkingContent, ToolCall};
 pub use event::{AssistantMessageEvent, StopReasonError, StopReasonSuccess};
 pub use message::{
-    AssistantMessage, Context, Message, ToolResultMessage, UserContent, UserContentBlock,
-    UserMessage,
+    AssistantMessage, Context, Message, ToolResultContent, ToolResultMessage, UserContent,
+    UserContentBlock, UserMessage,
 };
 pub use model::{
     AnthropicMessages, BedrockConverseStream, GoogleGenerativeAi, GoogleVertex, InputType, Model,
