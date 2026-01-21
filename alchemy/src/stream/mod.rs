@@ -51,23 +51,27 @@ where
             // This is a type-level guarantee from the match
             let model_ptr = model as *const Model<TApi> as *const Model<OpenAICompletions>;
             let openai_model = unsafe { &*model_ptr };
-            Ok(stream_openai_completions(openai_model, context, resolved_options))
+            Ok(stream_openai_completions(
+                openai_model,
+                context,
+                resolved_options,
+            ))
         }
-        Api::AnthropicMessages => {
-            Err(Error::InvalidResponse("Anthropic provider not yet implemented".to_string()))
-        }
-        Api::BedrockConverseStream => {
-            Err(Error::InvalidResponse("Bedrock provider not yet implemented".to_string()))
-        }
-        Api::OpenAIResponses => {
-            Err(Error::InvalidResponse("OpenAI Responses provider not yet implemented".to_string()))
-        }
-        Api::GoogleGenerativeAi => {
-            Err(Error::InvalidResponse("Google Generative AI provider not yet implemented".to_string()))
-        }
-        Api::GoogleVertex => {
-            Err(Error::InvalidResponse("Google Vertex provider not yet implemented".to_string()))
-        }
+        Api::AnthropicMessages => Err(Error::InvalidResponse(
+            "Anthropic provider not yet implemented".to_string(),
+        )),
+        Api::BedrockConverseStream => Err(Error::InvalidResponse(
+            "Bedrock provider not yet implemented".to_string(),
+        )),
+        Api::OpenAIResponses => Err(Error::InvalidResponse(
+            "OpenAI Responses provider not yet implemented".to_string(),
+        )),
+        Api::GoogleGenerativeAi => Err(Error::InvalidResponse(
+            "Google Generative AI provider not yet implemented".to_string(),
+        )),
+        Api::GoogleVertex => Err(Error::InvalidResponse(
+            "Google Vertex provider not yet implemented".to_string(),
+        )),
     }
 }
 

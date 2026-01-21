@@ -23,14 +23,34 @@ pub struct OpenAICompletionsOptions {
     pub headers: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone)]
 pub enum ToolChoice {
     Auto,
     None,
     Required,
-    #[serde(rename = "function")]
     Function { name: String },
+}
+
+impl Serialize for ToolChoice {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ToolChoice::Auto => serializer.serialize_str("auto"),
+            ToolChoice::None => serializer.serialize_str("none"),
+            ToolChoice::Required => serializer.serialize_str("required"),
+            ToolChoice::Function { name } => {
+                let value = json!({
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                    },
+                });
+                value.serialize(serializer)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -122,11 +142,7 @@ async fn run_stream_inner(
     let client = build_client(model, api_key, options.headers.as_ref())?;
     let params = build_params(model, context, options, &compat);
 
-    let response = client
-        .post(&model.base_url)
-        .json(&params)
-        .send()
-        .await?;
+    let response = client.post(&model.base_url).json(&params).send().await?;
 
     if !response.status().is_success() {
         let status = response.status().as_u16();
@@ -167,12 +183,7 @@ async fn run_stream_inner(
                 }
 
                 if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
-                    process_chunk(
-                        &chunk,
-                        output,
-                        sender,
-                        &mut current_block,
-                    );
+                    process_chunk(&chunk, output, sender, &mut current_block);
                 }
             }
         }
@@ -197,9 +208,19 @@ async fn run_stream_inner(
 
 #[derive(Debug)]
 enum CurrentBlock {
-    Text { text: String },
-    Thinking { thinking: String, signature: String },
-    ToolCall { id: String, name: String, partial_args: String },
+    Text {
+        index: usize,
+    },
+    Thinking {
+        index: usize,
+        signature: String,
+    },
+    ToolCall {
+        index: usize,
+        id: String,
+        name: String,
+        partial_args: String,
+    },
 }
 
 fn process_chunk(
@@ -215,13 +236,8 @@ fn process_chunk(
             .as_ref()
             .and_then(|d| d.cached_tokens)
             .unwrap_or(0);
-        let reasoning_tokens = usage
-            .completion_tokens_details
-            .as_ref()
-            .and_then(|d| d.reasoning_tokens)
-            .unwrap_or(0);
         let input = usage.prompt_tokens.saturating_sub(cached_tokens);
-        let output_tokens = usage.completion_tokens + reasoning_tokens;
+        let output_tokens = usage.completion_tokens;
 
         output.usage = Usage {
             input,
@@ -251,26 +267,30 @@ fn process_chunk(
     if let Some(content) = &delta.content {
         if !content.is_empty() {
             match current_block {
-                Some(CurrentBlock::Text { text }) => {
-                    text.push_str(content);
+                Some(CurrentBlock::Text { index }) => {
+                    if let Some(Content::Text { inner }) = output.content.get_mut(*index) {
+                        inner.text.push_str(content);
+                    }
                     sender.push(AssistantMessageEvent::TextDelta {
-                        content_index: output.content.len().saturating_sub(1),
+                        content_index: *index,
                         delta: content.clone(),
                         partial: output.clone(),
                     });
                 }
                 _ => {
                     finish_current_block(current_block, output, sender);
-                    *current_block = Some(CurrentBlock::Text {
-                        text: content.clone(),
-                    });
                     output.content.push(Content::text(""));
+                    let index = output.content.len() - 1;
+                    *current_block = Some(CurrentBlock::Text { index });
                     sender.push(AssistantMessageEvent::TextStart {
-                        content_index: output.content.len() - 1,
+                        content_index: index,
                         partial: output.clone(),
                     });
+                    if let Some(Content::Text { inner }) = output.content.get_mut(index) {
+                        inner.text.push_str(content);
+                    }
                     sender.push(AssistantMessageEvent::TextDelta {
-                        content_index: output.content.len() - 1,
+                        content_index: index,
                         delta: content.clone(),
                         partial: output.clone(),
                     });
@@ -297,27 +317,36 @@ fn process_chunk(
             };
 
             match current_block {
-                Some(CurrentBlock::Thinking { thinking, .. }) => {
-                    thinking.push_str(reasoning_text);
+                Some(CurrentBlock::Thinking { index, .. }) => {
+                    if let Some(Content::Thinking { inner }) = output.content.get_mut(*index) {
+                        inner.thinking.push_str(reasoning_text);
+                    }
                     sender.push(AssistantMessageEvent::ThinkingDelta {
-                        content_index: output.content.len().saturating_sub(1),
+                        content_index: *index,
                         delta: reasoning_text.clone(),
                         partial: output.clone(),
                     });
                 }
                 _ => {
                     finish_current_block(current_block, output, sender);
+                    output.content.push(Content::thinking(""));
+                    let index = output.content.len() - 1;
+                    if let Some(Content::Thinking { inner }) = output.content.get_mut(index) {
+                        inner.thinking_signature = Some(signature.to_string());
+                    }
                     *current_block = Some(CurrentBlock::Thinking {
-                        thinking: reasoning_text.clone(),
+                        index,
                         signature: signature.to_string(),
                     });
-                    output.content.push(Content::thinking(""));
                     sender.push(AssistantMessageEvent::ThinkingStart {
-                        content_index: output.content.len() - 1,
+                        content_index: index,
                         partial: output.clone(),
                     });
+                    if let Some(Content::Thinking { inner }) = output.content.get_mut(index) {
+                        inner.thinking.push_str(reasoning_text);
+                    }
                     sender.push(AssistantMessageEvent::ThinkingDelta {
-                        content_index: output.content.len() - 1,
+                        content_index: index,
                         delta: reasoning_text.clone(),
                         partial: output.clone(),
                     });
@@ -338,42 +367,91 @@ fn process_chunk(
 
             if should_start_new {
                 finish_current_block(current_block, output, sender);
-                *current_block = Some(CurrentBlock::ToolCall {
-                    id: tc.id.clone().unwrap_or_default(),
-                    name: tc.function.as_ref().and_then(|f| f.name.clone()).unwrap_or_default(),
-                    partial_args: String::new(),
-                });
+                let id = tc.id.clone().unwrap_or_default();
+                let name = tc
+                    .function
+                    .as_ref()
+                    .and_then(|f| f.name.clone())
+                    .unwrap_or_default();
                 output.content.push(Content::tool_call(
-                    tc.id.clone().unwrap_or_default(),
-                    tc.function.as_ref().and_then(|f| f.name.clone()).unwrap_or_default(),
+                    id.clone(),
+                    name.clone(),
                     serde_json::Value::Object(serde_json::Map::new()),
                 ));
+                let index = output.content.len() - 1;
+                *current_block = Some(CurrentBlock::ToolCall {
+                    index,
+                    id,
+                    name,
+                    partial_args: String::new(),
+                });
                 sender.push(AssistantMessageEvent::ToolCallStart {
-                    content_index: output.content.len() - 1,
+                    content_index: index,
                     partial: output.clone(),
                 });
             }
 
-            if let Some(CurrentBlock::ToolCall { id, name, partial_args }) = current_block {
+            if let Some(CurrentBlock::ToolCall {
+                index,
+                id,
+                name,
+                partial_args,
+            }) = current_block
+            {
                 if let Some(new_id) = &tc.id {
                     *id = new_id.clone();
                 }
+                let mut arguments_update: Option<serde_json::Value> = None;
+
                 if let Some(f) = &tc.function {
                     if let Some(n) = &f.name {
                         *name = n.clone();
                     }
                     if let Some(args) = &f.arguments {
                         partial_args.push_str(args);
+                        let existing_arguments = match output.content.get(*index) {
+                            Some(Content::ToolCall { inner }) => inner.arguments.clone(),
+                            _ => serde_json::Value::Object(serde_json::Map::new()),
+                        };
+                        let arguments =
+                            parse_tool_call_arguments(partial_args.as_str(), &existing_arguments);
+                        arguments_update = Some(arguments);
+                        if let Some(Content::ToolCall { inner }) = output.content.get_mut(*index) {
+                            inner.id = id.clone();
+                            inner.name = name.clone();
+                            if let Some(arguments) = &arguments_update {
+                                inner.arguments = arguments.clone();
+                            }
+                        }
                         sender.push(AssistantMessageEvent::ToolCallDelta {
-                            content_index: output.content.len() - 1,
+                            content_index: *index,
                             delta: args.clone(),
                             partial: output.clone(),
                         });
                     }
                 }
+
+                if arguments_update.is_none() {
+                    if let Some(Content::ToolCall { inner }) = output.content.get_mut(*index) {
+                        inner.id = id.clone();
+                        inner.name = name.clone();
+                    }
+                }
             }
         }
     }
+}
+
+fn parse_tool_call_arguments(
+    partial_args: &str,
+    fallback: &serde_json::Value,
+) -> serde_json::Value {
+    let trimmed = partial_args.trim();
+    if trimmed.is_empty() {
+        return serde_json::Value::Object(serde_json::Map::new());
+    }
+
+    serde_json::from_str(trimmed).unwrap_or_else(|_| fallback.clone())
 }
 
 fn finish_current_block(
@@ -385,45 +463,51 @@ fn finish_current_block(
         return;
     };
 
-    let content_index = output.content.len().saturating_sub(1);
-
     match block {
-        CurrentBlock::Text { text } => {
-            // Update the content in output
-            if let Some(Content::Text { inner }) = output.content.get_mut(content_index) {
-                inner.text = text.clone();
-            }
+        CurrentBlock::Text { index } => {
+            let content = match output.content.get(index) {
+                Some(Content::Text { inner }) => inner.text.clone(),
+                _ => String::new(),
+            };
             sender.push(AssistantMessageEvent::TextEnd {
-                content_index,
-                content: text,
+                content_index: index,
+                content,
                 partial: output.clone(),
             });
         }
-        CurrentBlock::Thinking { thinking, signature } => {
-            // Update the content in output
-            if let Some(Content::Thinking { inner }) = output.content.get_mut(content_index) {
-                inner.thinking = thinking.clone();
-                inner.thinking_signature = Some(signature);
-            }
+        CurrentBlock::Thinking { index, signature } => {
+            let content = match output.content.get_mut(index) {
+                Some(Content::Thinking { inner }) => {
+                    if inner.thinking_signature.is_none() {
+                        inner.thinking_signature = Some(signature);
+                    }
+                    inner.thinking.clone()
+                }
+                _ => String::new(),
+            };
             sender.push(AssistantMessageEvent::ThinkingEnd {
-                content_index,
-                content: thinking,
+                content_index: index,
+                content,
                 partial: output.clone(),
             });
         }
-        CurrentBlock::ToolCall { id, name, partial_args } => {
+        CurrentBlock::ToolCall {
+            index,
+            id,
+            name,
+            partial_args,
+        } => {
             let arguments: serde_json::Value = serde_json::from_str(&partial_args)
                 .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
 
             // Update the content in output
-            if let Some(Content::ToolCall { inner }) = output.content.get_mut(content_index) {
+            if let Some(Content::ToolCall { inner }) = output.content.get_mut(index) {
                 inner.id = id.clone();
                 inner.name = name.clone();
                 inner.arguments = arguments.clone();
             }
-
             sender.push(AssistantMessageEvent::ToolCallEnd {
-                content_index,
+                content_index: index,
                 tool_call: ToolCall {
                     id,
                     name,
@@ -547,7 +631,8 @@ fn build_params(
             if compat.thinking_format == ThinkingFormat::Zai {
                 params["thinking"] = json!({ "type": "enabled" });
             } else {
-                params["reasoning_effort"] = serde_json::to_value(effort).unwrap_or(json!("medium"));
+                params["reasoning_effort"] =
+                    serde_json::to_value(effort).unwrap_or(json!("medium"));
             }
         }
     }
@@ -620,13 +705,18 @@ fn convert_messages(
                     .content
                     .iter()
                     .filter_map(|c| match c {
-                        Content::Text { inner } if !inner.text.is_empty() => Some(inner.text.clone()),
+                        Content::Text { inner } if !inner.text.is_empty() => {
+                            Some(inner.text.clone())
+                        }
                         _ => None,
                     })
                     .collect();
 
                 if !text_parts.is_empty() {
-                    msg["content"] = json!(text_parts.iter().map(|t| json!({ "type": "text", "text": t })).collect::<Vec<_>>());
+                    msg["content"] = json!(text_parts
+                        .iter()
+                        .map(|t| json!({ "type": "text", "text": t }))
+                        .collect::<Vec<_>>());
                 }
 
                 // Collect tool calls
@@ -705,8 +795,8 @@ fn detect_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
     let provider = &model.provider;
     let base_url = &model.base_url;
 
-    let is_zai = matches!(provider, Provider::Known(KnownProvider::Zai))
-        || base_url.contains("api.z.ai");
+    let is_zai =
+        matches!(provider, Provider::Known(KnownProvider::Zai)) || base_url.contains("api.z.ai");
 
     let is_non_standard = matches!(
         provider,
@@ -786,9 +876,7 @@ fn resolve_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
         requires_mistral_tool_ids: explicit
             .requires_mistral_tool_ids
             .unwrap_or(detected.requires_mistral_tool_ids),
-        thinking_format: explicit
-            .thinking_format
-            .unwrap_or(detected.thinking_format),
+        thinking_format: explicit.thinking_format.unwrap_or(detected.thinking_format),
     }
 }
 
@@ -840,17 +928,11 @@ struct StreamUsage {
     prompt_tokens: u32,
     completion_tokens: u32,
     prompt_tokens_details: Option<PromptTokensDetails>,
-    completion_tokens_details: Option<CompletionTokensDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 struct PromptTokensDetails {
     cached_tokens: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CompletionTokensDetails {
-    reasoning_tokens: Option<u32>,
 }
 
 #[cfg(test)]
@@ -929,5 +1011,94 @@ mod tests {
         assert_eq!(compat.max_tokens_field, MaxTokensField::MaxTokens);
         assert!(compat.requires_mistral_tool_ids);
         assert!(compat.requires_tool_result_name);
+    }
+
+    #[test]
+    fn test_tool_choice_function_serialization() {
+        let tc = ToolChoice::Function {
+            name: "do_it".to_string(),
+        };
+        let value = serde_json::to_value(tc).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "do_it",
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn test_usage_ignores_reasoning_tokens() {
+        let chunk: StreamChunk = serde_json::from_value(serde_json::json!({
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "prompt_tokens_details": { "cached_tokens": 2 },
+                "completion_tokens_details": { "reasoning_tokens": 3 }
+            }
+        }))
+        .unwrap();
+
+        let mut output = AssistantMessage {
+            content: vec![],
+            api: Api::OpenAICompletions,
+            provider: Provider::Known(KnownProvider::OpenAI),
+            model: "gpt-4".to_string(),
+            usage: Usage::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 0,
+        };
+        let (_stream, mut sender) = AssistantMessageEventStream::new();
+        let mut current_block = None;
+
+        process_chunk(&chunk, &mut output, &mut sender, &mut current_block);
+
+        assert_eq!(output.usage.input, 8);
+        assert_eq!(output.usage.output, 5);
+        assert_eq!(output.usage.cache_read, 2);
+        assert_eq!(output.usage.total_tokens, 15);
+    }
+
+    #[test]
+    fn test_text_delta_updates_partial_output() {
+        let chunk = StreamChunk {
+            choices: vec![StreamChoice {
+                delta: Some(StreamDelta {
+                    content: Some("hi".to_string()),
+                    reasoning_content: None,
+                    reasoning: None,
+                    reasoning_text: None,
+                    tool_calls: None,
+                }),
+                finish_reason: None,
+            }],
+            usage: None,
+        };
+
+        let mut output = AssistantMessage {
+            content: vec![],
+            api: Api::OpenAICompletions,
+            provider: Provider::Known(KnownProvider::OpenAI),
+            model: "gpt-4".to_string(),
+            usage: Usage::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 0,
+        };
+        let (_stream, mut sender) = AssistantMessageEventStream::new();
+        let mut current_block = None;
+
+        process_chunk(&chunk, &mut output, &mut sender, &mut current_block);
+
+        assert_eq!(output.content.len(), 1);
+        match &output.content[0] {
+            Content::Text { inner } => assert_eq!(inner.text, "hi"),
+            _ => panic!("expected text content"),
+        }
     }
 }
