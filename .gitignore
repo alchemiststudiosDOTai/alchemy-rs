@@ -11,6 +11,12 @@ venv/
 # Node
 node_modules/
 
+# Rust
+target/
+
+# QA
+qa-report-logic/
+
 # IDE
 .idea/
 .vscode/

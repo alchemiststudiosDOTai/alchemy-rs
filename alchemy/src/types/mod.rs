@@ -8,15 +8,18 @@ pub mod options;
 pub mod tool;
 pub mod usage;
 
-pub use api::{Api, ApiType, KnownProvider, Provider};
-pub use compat::{OpenAICompletionsCompat, OpenAIResponsesCompat};
+pub use api::{Api, ApiType, CompatibilityOptions, KnownProvider, NoCompat, Provider};
+pub use compat::{MaxTokensField, OpenAICompletionsCompat, OpenAIResponsesCompat, ThinkingFormat};
 pub use content::{Content, ImageContent, TextContent, ThinkingContent, ToolCall};
 pub use event::{AssistantMessageEvent, StopReasonError, StopReasonSuccess};
 pub use message::{
     AssistantMessage, Context, Message, ToolResultMessage, UserContent, UserContentBlock,
     UserMessage,
 };
-pub use model::{InputType, Model};
+pub use model::{
+    AnthropicMessages, BedrockConverseStream, GoogleGenerativeAi, GoogleVertex, InputType, Model,
+    OpenAICompletions, OpenAIResponses,
+};
 pub use options::{SimpleStreamOptions, StreamOptions, ThinkingLevel};
 pub use tool::Tool;
 pub use usage::{Cost, ModelCost, StopReason, Usage};
