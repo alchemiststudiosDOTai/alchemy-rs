@@ -19,13 +19,13 @@ This runs `docs:build` first to generate the documentation manifest, then builds
 
 ## Scripts
 
-| Script | Description |
-|--------|-------------|
-| `dev` | Start development server |
-| `build` | Build docs and site for production |
+| Script       | Description                                   |
+| ------------ | --------------------------------------------- |
+| `dev`        | Start development server                      |
+| `build`      | Build docs and site for production            |
 | `docs:build` | Process markdown files from `/docs` into JSON |
-| `preview` | Preview production build locally |
-| `lint` | Run ESLint |
+| `preview`    | Preview production build locally              |
+| `lint`       | Run ESLint                                    |
 
 ## Documentation System
 
@@ -55,7 +55,6 @@ read_when:
   - Condition when this doc is useful
   - Another relevant scenario
 ---
-
 # Page Title
 
 Content...

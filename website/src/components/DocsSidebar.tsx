@@ -58,72 +58,72 @@ export function DocsSidebar({ manifest, open, onClose }: DocsSidebarProps) {
         </div>
 
         <nav className="sticky top-0 h-[calc(100vh-57px)] overflow-y-auto px-2 py-6">
-        <Link
-          to="/docs"
-          onClick={onClose}
-          className={cn(
-            "block mb-6 text-sm font-medium transition-colors",
-            currentSlug === ""
-              ? "text-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          Overview
-        </Link>
+          <Link
+            to="/docs"
+            onClick={onClose}
+            className={cn(
+              "block mb-6 text-sm font-medium transition-colors",
+              currentSlug === ""
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Overview
+          </Link>
 
-        {manifest.categories.map((category) => (
-          <div key={category.slug} className="mb-6">
-            <h3 className="mb-2 text-sm font-semibold text-foreground">
-              {category.name}
-            </h3>
+          {manifest.categories.map((category) => (
+            <div key={category.slug} className="mb-6">
+              <h3 className="mb-2 text-sm font-semibold text-foreground">
+                {category.name}
+              </h3>
 
-            <ul className="space-y-1">
-              {category.pages.map((page) => (
-                <li key={page.slug}>
-                  <Link
-                    to={`/docs/${page.slug}`}
-                    onClick={onClose}
-                    className={cn(
-                      "block py-1 text-sm transition-colors",
-                      currentSlug === page.slug
-                        ? "font-medium text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {page.title}
-                  </Link>
-                </li>
-              ))}
+              <ul className="space-y-1">
+                {category.pages.map((page) => (
+                  <li key={page.slug}>
+                    <Link
+                      to={`/docs/${page.slug}`}
+                      onClick={onClose}
+                      className={cn(
+                        "block py-1 text-sm transition-colors",
+                        currentSlug === page.slug
+                          ? "font-medium text-foreground"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {page.title}
+                    </Link>
+                  </li>
+                ))}
 
-              {category.subcategories.map((subcategory) => (
-                <li key={subcategory.slug} className="mt-3">
-                  <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {subcategory.name}
-                  </h4>
-                  <ul className="space-y-1 border-l border-border pl-3">
-                    {subcategory.pages.map((page) => (
-                      <li key={page.slug}>
-                        <Link
-                          to={`/docs/${page.slug}`}
-                          onClick={onClose}
-                          className={cn(
-                            "block py-1 text-sm transition-colors",
-                            currentSlug === page.slug
-                              ? "font-medium text-foreground"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          {page.title}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </nav>
+                {category.subcategories.map((subcategory) => (
+                  <li key={subcategory.slug} className="mt-3">
+                    <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {subcategory.name}
+                    </h4>
+                    <ul className="space-y-1 border-l border-border pl-3">
+                      {subcategory.pages.map((page) => (
+                        <li key={page.slug}>
+                          <Link
+                            to={`/docs/${page.slug}`}
+                            onClick={onClose}
+                            className={cn(
+                              "block py-1 text-sm transition-colors",
+                              currentSlug === page.slug
+                                ? "font-medium text-foreground"
+                                : "text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            {page.title}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </nav>
       </aside>
     </>
   );

@@ -22,7 +22,7 @@ interface TocItem {
 }
 
 function extractToc(content: string): TocItem[] {
-  const headingRegex = /^(#{2,3})\s+(.+)$/gm;
+  const headingRegex = /^(#{2})\s+(.+)$/gm;
   const items: TocItem[] = [];
   let match;
 
@@ -154,16 +154,14 @@ export function DocsPage() {
       {/* On this page sidebar */}
       {toc.length > 0 && (
         <aside className="hidden lg:block w-64 shrink-0">
-          <div className="sticky top-6 ml-auto w-48">
+          <div className="sticky top-6 ml-auto w-56 overflow-x-auto">
             <h4 className="text-sm font-medium mb-3">On this page</h4>
             <nav className="space-y-2">
               {toc.map((item) => (
                 <a
                   key={item.id}
                   href={`#${item.id}`}
-                  className={`block text-sm text-muted-foreground hover:text-foreground transition-colors ${
-                    item.level === 3 ? "pl-3" : ""
-                  }`}
+                  className="block text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {item.text}
                 </a>

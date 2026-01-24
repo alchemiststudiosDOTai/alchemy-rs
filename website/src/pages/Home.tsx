@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { Header } from "../components/Header";
 import { ArrowRightIcon } from "lucide-react";
+import { HeroCode } from "@/components/HeroCode";
+import { ProvidersCarousel } from "@/components/ProvidersCarousel";
 
 export function Home() {
   return (
@@ -10,43 +12,59 @@ export function Home() {
       <main className="container mx-auto border-x">
         <div className="container mx-auto border-b h-12 flex items-center justify-center gap-2 bg-primary text-background px-6">
           <span>version 0.1.0 is out!</span>
-          <Link to="/docs" className="text-sm underline transition-all flex items-center gap-1">
-            <span>Check it out</span>
+          <Link
+            to="/docs"
+            className="text-sm underline transition-all flex items-center gap-1"
+          >
+            <span>Install now</span>
             <ArrowRightIcon className="w-4 h-4" />
           </Link>
         </div>
 
-        <section className="w-full border-b px-12 grid grid-cols-1 md:grid-cols-2 gap-12">
-          <div className="py-12">
+        <section className="w-full border-b grid grid-cols-1 lg:grid-cols-2 lg:gap-12">
+          <div className="border-r">
+            <div className="w-full p-6 lg:p-12 border-b">
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold">
+                Unified LLM API Abstraction Layer
+                <br /> in Rust.
+              </h1>
+            </div>
+            <div className="w-full p-6 lg:p-12">
+              <p className="text-2xl text-muted-foreground mb-12">
+                Async streaming, type-safe tool calling, and prompt caching. One
+                interface for Anthropic, OpenAI, Google, Bedrock, and more.
+              </p>
 
-          <h1 className="text-5xl md:text-6xl font-bold mb-6">
-            Unified LLM API Abstraction Layer in Rust.
-          </h1>
-          <p className="text-xl text-muted-foreground mb-8">
-            Unified LLM API abstraction layer in Rust. Support for 8+ providers
-            through 4 main API interfaces.
-          </p>
-
-          <div className="flex gap-4">
-            <Link
-              to="/docs"
-              className="inline-flex items-center justify-center px-6 py-3 bg-primary text-primary-foreground font-medium transition-colors hover:bg-primary/90"
-            >
-              Get Started
-            </Link>
-            <a
-              href="https://github.com/your-org/alchemy-rs"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center px-6 py-3 border border-border font-medium transition-colors hover:bg-accent"
-            >
-              View on GitHub
-            </a>
+              <div className="flex flex-col md:flex-row gap-6">
+                <Link
+                  to="/docs"
+                  className="inline-flex items-center justify-center px-6 py-3 bg-primary text-primary-foreground font-medium transition-colors hover:bg-primary/90"
+                >
+                  Get Started
+                </Link>
+                <a
+                  href="https://github.com/your-org/alchemy-rs"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center px-6 py-3 border border-border font-medium transition-colors hover:bg-accent"
+                >
+                  View on GitHub
+                </a>
+              </div>
+            </div>
           </div>
-          </div>
 
-          <div className="border-t md:border-t-0 md:border-l py-12"></div>
+          <div className="border-t lg:border-t-0 lg:border-l p-12 px-0 flex flex-col gap-12 overflow-hidden">
+            <div className="w-full border-y px-12 h-12 flex items-center font-mono">
+              src/alchemy.rs
+            </div>
+            <div className="w-full px-12">
+              <HeroCode />
+            </div>
+          </div>
         </section>
+
+        <ProvidersCarousel />
 
         <div className="mt-24 grid md:grid-cols-3 gap-8">
           <div className="p-6 border border-border">

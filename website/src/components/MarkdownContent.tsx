@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { marked } from "marked";
 import { codeToHtml } from "shiki";
+import { alchemyDark, alchemyLight } from "@/lib/shiki-theme";
 
 interface MarkdownContentProps {
   content: string;
@@ -40,8 +41,8 @@ async function highlightCode(html: string): Promise<string> {
       const highlighted = await codeToHtml(decodedCode, {
         lang: lang || "text",
         themes: {
-          light: "vitesse-light",
-          dark: "vitesse-black",
+          light: alchemyLight,
+          dark: alchemyDark,
         },
         defaultColor: false,
       });
@@ -100,7 +101,8 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
     };
 
     containerRef.current.addEventListener("click", handleClick);
-    return () => containerRef.current?.removeEventListener("click", handleClick);
+    return () =>
+      containerRef.current?.removeEventListener("click", handleClick);
   }, [html]);
 
   return (

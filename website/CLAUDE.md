@@ -27,6 +27,7 @@ bun run preview      # Preview production build
 4. **Runtime**: React components fetch and render the JSON
 
 Directory structure in `/docs` maps to navigation:
+
 - Top-level directories become categories
 - Subdirectories become subcategories
 - Files prefixed with numbers (e.g., `01-intro.md`) are ordered accordingly

@@ -208,7 +208,9 @@ function main() {
   }
 
   console.log(`Built ${Object.keys(manifest.pages).length} doc pages`);
-  console.log(`Categories: ${manifest.categories.map((c) => c.name).join(", ")}`);
+  console.log(
+    `Categories: ${manifest.categories.map((c) => c.name).join(", ")}`
+  );
 }
 
 main();
