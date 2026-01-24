@@ -18,7 +18,7 @@ export function Header() {
             Documentation
           </Link>
           <a
-            href="https://github.com/your-org/alchemy-rs"
+            href="https://github.com/alchemiststudiosDOTai/alchemy-rs"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-muted-foreground hover:text-foreground transition-colors hidden sm:block"

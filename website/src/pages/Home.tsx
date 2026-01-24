@@ -49,7 +49,7 @@ export function Home() {
                   Get Started
                 </Link>
                 <a
-                  href="https://github.com/your-org/alchemy-rs"
+                  href="https://github.com/alchemiststudiosDOTai/alchemy-rs"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center px-6 py-3 border border-border font-medium transition-colors hover:bg-accent"

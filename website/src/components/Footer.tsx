@@ -15,14 +15,14 @@ const FOOTER_LINKS: Record<string, FooterLink[]> = {
     { label: "Streaming", href: "/docs/streaming" },
   ],
   Community: [
-    { label: "GitHub", href: "https://github.com/your-org/alchemy-rs", external: true },
+    { label: "GitHub", href: "https://github.com/alchemiststudiosDOTai/alchemy-rs", external: true },
     { label: "Discord", href: "https://discord.gg/alchemy", external: true },
     { label: "Twitter", href: "https://twitter.com/alchemy_rs", external: true },
   ],
   Resources: [
     { label: "Examples", href: "/docs/examples" },
     { label: "API Reference", href: "/docs/api" },
-    { label: "Changelog", href: "https://github.com/your-org/alchemy-rs/releases", external: true },
+    { label: "Changelog", href: "https://github.com/alchemiststudiosDOTai/alchemy-rs/releases", external: true },
   ],
 };
 
