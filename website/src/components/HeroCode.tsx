@@ -172,25 +172,25 @@ function Line({ children }: { children?: React.ReactNode }) {
 }
 
 function Keyword({ children }: { children: React.ReactNode }) {
-  return <span className="text-[#c45a2c]">{children}</span>;
+  return <span className="text-[#d73a49] dark:text-[#c45a2c]">{children}</span>;
 }
 
 function Type({ children }: { children: React.ReactNode }) {
-  return <span className="text-[#d4976c]">{children}</span>;
+  return <span className="text-[#e36209] dark:text-[#d4976c]">{children}</span>;
 }
 
 function Fn({ children }: { children: React.ReactNode }) {
-  return <span className="text-[#e0e0e0]">{children}</span>;
+  return <span className="text-[#6f42c1] dark:text-[#e0e0e0]">{children}</span>;
 }
 
 function String({ children }: { children: React.ReactNode }) {
-  return <span className="text-[#c9a26d]">{children}</span>;
+  return <span className="text-[#22863a] dark:text-[#c9a26d]">{children}</span>;
 }
 
 function Punct({ children }: { children: React.ReactNode }) {
-  return <span className="text-[#808080]">{children}</span>;
+  return <span className="text-[#24292e] dark:text-[#808080]">{children}</span>;
 }
 
 function Macro({ children }: { children: React.ReactNode }) {
-  return <span className="text-[#c45a2c]">{children}</span>;
+  return <span className="text-[#6f42c1] dark:text-[#c45a2c]">{children}</span>;
 }

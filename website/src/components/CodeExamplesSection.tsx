@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CodeBlock } from "./primitives/animate/code-block";
@@ -106,6 +106,19 @@ async fn main() -> Result<()> {
 
 export function CodeExamplesSection() {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const updateTheme = () => {
+      setTheme(root.classList.contains("dark") ? "dark" : "light");
+    };
+    updateTheme();
+
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <section className="border-y mb-12">
@@ -164,7 +177,7 @@ export function CodeExamplesSection() {
           <CodeBlock
             code={CODE_EXAMPLES[activeIndex].code}
             lang="rust"
-            theme="dark"
+            theme={theme}
             className="font-mono text-sm leading-relaxed [&_pre]:!bg-transparent [&_code]:!bg-transparent"
           />
         </div>
