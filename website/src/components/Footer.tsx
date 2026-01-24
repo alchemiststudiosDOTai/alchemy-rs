@@ -1,7 +1,13 @@
 import { Link } from "react-router-dom";
 import { Logo } from "./Logo";
 
-const FOOTER_LINKS = {
+type FooterLink = {
+  label: string;
+  href: string;
+  external?: boolean;
+};
+
+const FOOTER_LINKS: Record<string, FooterLink[]> = {
   Documentation: [
     { label: "Getting Started", href: "/docs" },
     { label: "Providers", href: "/docs/providers" },
