@@ -1,8 +1,14 @@
 import { Link } from "react-router-dom";
-import { Header } from "../components/Header";
 import { ArrowRightIcon } from "lucide-react";
+import { Header } from "@/components/Header";
 import { HeroCode } from "@/components/HeroCode";
 import { ProvidersCarousel } from "@/components/ProvidersCarousel";
+import { FeaturesSection } from "@/components/FeaturesSection";
+import { CodeExamplesSection } from "@/components/CodeExamplesSection";
+import { ComparisonSection } from "@/components/ComparisonSection";
+import { StatsSection } from "@/components/StatsSection";
+import { CTASection } from "@/components/CTASection";
+import { Footer } from "@/components/Footer";
 
 export function Home() {
   return (
@@ -24,18 +30,18 @@ export function Home() {
         <section className="w-full border-b grid grid-cols-1 lg:grid-cols-2 lg:gap-12">
           <div className="border-r">
             <div className="w-full p-6 lg:p-12 border-b">
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold">
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-semibold">
                 Unified LLM API Abstraction Layer
                 <br /> in Rust.
               </h1>
             </div>
             <div className="w-full p-6 lg:p-12">
-              <p className="text-2xl text-muted-foreground mb-12">
+              <p className="text-xl lg:text-2xl text-muted-foreground mb-8 lg:mb-12">
                 Async streaming, type-safe tool calling, and prompt caching. One
                 interface for Anthropic, OpenAI, Google, Bedrock, and more.
               </p>
 
-              <div className="flex flex-col md:flex-row gap-6">
+              <div className="flex flex-col md:flex-row gap-4 lg:gap-6">
                 <Link
                   to="/docs"
                   className="inline-flex items-center justify-center px-6 py-3 bg-primary text-primary-foreground font-medium transition-colors hover:bg-primary/90"
@@ -54,11 +60,11 @@ export function Home() {
             </div>
           </div>
 
-          <div className="border-t lg:border-t-0 lg:border-l p-12 px-0 flex flex-col gap-12 overflow-hidden">
-            <div className="w-full border-y px-12 h-12 flex items-center font-mono">
+          <div className="border-t lg:border-t-0 lg:border-l p-6 lg:p-12 flex flex-col gap-6 overflow-hidden bg-secondary">
+            <div className="w-full flex items-center font-mono text-accent-foreground opacity-50">
               src/alchemy.rs
             </div>
-            <div className="w-full px-12">
+            <div className="w-full">
               <HeroCode />
             </div>
           </div>
@@ -66,30 +72,18 @@ export function Home() {
 
         <ProvidersCarousel />
 
-        <div className="mt-24 grid md:grid-cols-3 gap-8">
-          <div className="p-6 border border-border">
-            <h3 className="font-semibold mb-2">Multi-Provider</h3>
-            <p className="text-sm text-muted-foreground">
-              Anthropic, OpenAI, Google, AWS Bedrock, Mistral, xAI, Groq,
-              Cerebras, and OpenRouter support.
-            </p>
-          </div>
-          <div className="p-6 border border-border">
-            <h3 className="font-semibold mb-2">Streaming First</h3>
-            <p className="text-sm text-muted-foreground">
-              All providers use async streams. Built on Tokio for maximum
-              performance.
-            </p>
-          </div>
-          <div className="p-6 border border-border">
-            <h3 className="font-semibold mb-2">Type Safe</h3>
-            <p className="text-sm text-muted-foreground">
-              Leverages Rust's type system. Strong typing at every layer with
-              comprehensive error handling.
-            </p>
-          </div>
-        </div>
+        <FeaturesSection />
+
+        <CodeExamplesSection />
+
+        <ComparisonSection />
+
+        <StatsSection />
+
+        <CTASection />
       </main>
+
+      <Footer />
     </div>
   );
 }

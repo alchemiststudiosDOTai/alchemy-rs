@@ -4,7 +4,6 @@ import * as React from "react";
 
 import { useIsInView, type UseIsInViewOptions } from "@/hooks/use-is-in-view";
 import { alchemyDark, alchemyLight } from "@/lib/shiki-theme";
-import { cn } from "@/lib/utils";
 
 type CodeBlockProps = React.ComponentProps<"div"> & {
   code: string;
@@ -88,7 +87,7 @@ function CodeBlock({
     let index = 0;
     const totalDuration = duration;
     const interval = totalDuration / characters.length;
-    let intervalId: NodeJS.Timeout;
+    let intervalId: ReturnType<typeof setInterval>;
 
     const timeout = setTimeout(() => {
       intervalId = setInterval(() => {

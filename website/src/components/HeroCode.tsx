@@ -118,52 +118,45 @@ export function HeroCode({ className }: HeroCodeProps) {
           <Punct>&lt;()&gt;</Punct> <Punct>{"{"}</Punct>
         </Line>
         <Line>
-          {" "}
-          <Keyword>let</Keyword> response <Punct>=</Punct>{" "}
+          {"    "}<Keyword>let</Keyword> response <Punct>=</Punct>{" "}
           <Type>{displayProvider}</Type>
           <Punct>::</Punct>
           <Fn>new</Fn>
           <Punct>()</Punct>
         </Line>
         <Line>
-          {" "}
-          <Punct>.</Punct>
+          {"      "}<Punct>.</Punct>
           <Fn>model</Fn>
           <Punct>(</Punct>
           <String>"{displayModel}"</String>
           <Punct>)</Punct>
         </Line>
         <Line>
-          {" "}
-          <Punct>.</Punct>
+          {"      "}<Punct>.</Punct>
           <Fn>prompt</Fn>
           <Punct>(</Punct>
           <String>"Hello, world!"</String>
           <Punct>)</Punct>
         </Line>
         <Line>
-          {" "}
-          <Punct>.</Punct>
+          {"      "}<Punct>.</Punct>
           <Fn>send</Fn>
           <Punct>()</Punct>
         </Line>
         <Line>
-          {" "}
-          <Punct>.</Punct>
+          {"      "}<Punct>.</Punct>
           <Keyword>await</Keyword>
           <Punct>?;</Punct>
         </Line>
         <Line />
         <Line>
-          {" "}
-          <Macro>println!</Macro>
+          {"    "}<Macro>println!</Macro>
           <Punct>(</Punct>
           <String>"{"{}"}"</String>, response.<Fn>text</Fn>
           <Punct>());</Punct>
         </Line>
         <Line>
-          {" "}
-          <Keyword>Ok</Keyword>
+          {"    "}<Keyword>Ok</Keyword>
           <Punct>(())</Punct>
         </Line>
         <Line>
