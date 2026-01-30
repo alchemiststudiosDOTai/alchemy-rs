@@ -343,6 +343,27 @@ mod tests {
         }
     }
 
+    fn transform_single_assistant_to_openai(content: Content) -> Vec<Message> {
+        let assistant = make_assistant(
+            Api::AnthropicMessages,
+            KnownProvider::Anthropic,
+            "claude-sonnet-4-20250514",
+            vec![content],
+        );
+        let messages = vec![Message::Assistant(assistant)];
+        let target = make_target(Api::OpenAICompletions, KnownProvider::OpenAI, "gpt-4o");
+
+        transform_messages_simple(&messages, &target)
+    }
+
+    fn assert_single_assistant_message(messages: &[Message]) -> &AssistantMessage {
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            Message::Assistant(assistant) => assistant,
+            _ => panic!("Expected assistant message"),
+        }
+    }
+
     #[test]
     fn test_user_message_passthrough() {
         let messages = vec![Message::User(make_user("Hello"))];
@@ -441,31 +462,16 @@ mod tests {
             thinking: "Let me think about this carefully.".to_string(),
             thinking_signature: Some("sig123".to_string()),
         };
-        let assistant = make_assistant(
-            Api::AnthropicMessages,
-            KnownProvider::Anthropic,
-            "claude-sonnet-4-20250514",
-            vec![Content::Thinking { inner: thinking }],
-        );
-
-        let messages = vec![Message::Assistant(assistant)];
-
-        // Different model
-        let target = make_target(Api::OpenAICompletions, KnownProvider::OpenAI, "gpt-4o");
-        let result = transform_messages_simple(&messages, &target);
+        let result = transform_single_assistant_to_openai(Content::Thinking { inner: thinking });
 
         // Thinking should be converted to text
-        assert_eq!(result.len(), 1);
-        if let Message::Assistant(a) = &result[0] {
-            assert_eq!(a.content.len(), 1);
-            if let Content::Text { inner } = &a.content[0] {
-                assert_eq!(inner.text, "Let me think about this carefully.");
-                assert!(inner.text_signature.is_none());
-            } else {
-                panic!("Expected text content");
-            }
+        let assistant = assert_single_assistant_message(&result);
+        assert_eq!(assistant.content.len(), 1);
+        if let Content::Text { inner } = &assistant.content[0] {
+            assert_eq!(inner.text, "Let me think about this carefully.");
+            assert!(inner.text_signature.is_none());
         } else {
-            panic!("Expected assistant message");
+            panic!("Expected text content");
         }
     }
 
@@ -755,21 +761,9 @@ mod tests {
             data: vec![1, 2, 3],
             mime_type: "image/png".to_string(),
         };
-        let assistant = make_assistant(
-            Api::AnthropicMessages,
-            KnownProvider::Anthropic,
-            "claude-sonnet-4-20250514",
-            vec![Content::Image { inner: image }],
-        );
+        let result = transform_single_assistant_to_openai(Content::Image { inner: image });
 
-        let messages = vec![Message::Assistant(assistant)];
-
-        let target = make_target(Api::OpenAICompletions, KnownProvider::OpenAI, "gpt-4o");
-        let result = transform_messages_simple(&messages, &target);
-
-        assert_eq!(result.len(), 1);
-        if let Message::Assistant(a) = &result[0] {
-            assert!(matches!(a.content[0], Content::Image { .. }));
-        }
+        let assistant = assert_single_assistant_message(&result);
+        assert!(matches!(assistant.content[0], Content::Image { .. }));
     }
 }

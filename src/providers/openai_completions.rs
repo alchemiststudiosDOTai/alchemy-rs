@@ -204,43 +204,29 @@ enum CurrentBlock {
     },
 }
 
+const REASONING_CONTENT_FIELD: &str = "reasoning_content";
+const REASONING_FIELD: &str = "reasoning";
+const REASONING_TEXT_FIELD: &str = "reasoning_text";
+
+struct ReasoningDelta<'a> {
+    text: &'a str,
+    signature: &'static str,
+}
+
 fn process_chunk(
     chunk: &StreamChunk,
     output: &mut AssistantMessage,
     sender: &mut EventStreamSender,
     current_block: &mut Option<CurrentBlock>,
 ) {
-    // Handle usage
     if let Some(usage) = &chunk.usage {
-        let cached_tokens = usage
-            .prompt_tokens_details
-            .as_ref()
-            .and_then(|d| d.cached_tokens)
-            .unwrap_or(0);
-        let reasoning_tokens = usage
-            .completion_tokens_details
-            .as_ref()
-            .and_then(|d| d.reasoning_tokens)
-            .unwrap_or(0);
-        let input = usage.prompt_tokens.saturating_sub(cached_tokens);
-        let output_tokens = usage.completion_tokens + reasoning_tokens;
-
-        output.usage = Usage {
-            input,
-            output: output_tokens,
-            cache_read: cached_tokens,
-            cache_write: 0,
-            total_tokens: input + output_tokens + cached_tokens,
-            ..Default::default()
-        };
+        update_usage_from_chunk(usage, output);
     }
 
-    // Process choice
     let Some(choice) = chunk.choices.first() else {
         return;
     };
 
-    // Update stop reason
     if let Some(reason) = &choice.finish_reason {
         output.stop_reason = map_stop_reason(reason);
     }
@@ -249,143 +235,231 @@ fn process_chunk(
         return;
     };
 
-    // Handle text content
-    if let Some(content) = &delta.content {
-        if !content.is_empty() {
-            match current_block {
-                Some(CurrentBlock::Text { text }) => {
-                    text.push_str(content);
-                    sender.push(AssistantMessageEvent::TextDelta {
-                        content_index: output.content.len().saturating_sub(1),
-                        delta: content.clone(),
-                        partial: output.clone(),
-                    });
-                }
-                _ => {
-                    finish_current_block(current_block, output, sender);
-                    *current_block = Some(CurrentBlock::Text {
-                        text: content.clone(),
-                    });
-                    output.content.push(Content::text(""));
-                    sender.push(AssistantMessageEvent::TextStart {
-                        content_index: output.content.len() - 1,
-                        partial: output.clone(),
-                    });
-                    sender.push(AssistantMessageEvent::TextDelta {
-                        content_index: output.content.len() - 1,
-                        delta: content.clone(),
-                        partial: output.clone(),
-                    });
-                }
-            }
-        }
+    if let Some(content) = delta.content.as_deref() {
+        handle_text_delta(content, output, sender, current_block);
     }
 
-    // Handle reasoning content (various field names)
-    let reasoning = delta
-        .reasoning_content
-        .as_ref()
-        .or(delta.reasoning.as_ref())
-        .or(delta.reasoning_text.as_ref());
-
-    if let Some(reasoning_text) = reasoning {
-        if !reasoning_text.is_empty() {
-            let signature = if delta.reasoning_content.is_some() {
-                "reasoning_content"
-            } else if delta.reasoning.is_some() {
-                "reasoning"
-            } else {
-                "reasoning_text"
-            };
-
-            match current_block {
-                Some(CurrentBlock::Thinking { thinking, .. }) => {
-                    thinking.push_str(reasoning_text);
-                    sender.push(AssistantMessageEvent::ThinkingDelta {
-                        content_index: output.content.len().saturating_sub(1),
-                        delta: reasoning_text.clone(),
-                        partial: output.clone(),
-                    });
-                }
-                _ => {
-                    finish_current_block(current_block, output, sender);
-                    *current_block = Some(CurrentBlock::Thinking {
-                        thinking: reasoning_text.clone(),
-                        signature: signature.to_string(),
-                    });
-                    output.content.push(Content::thinking(""));
-                    sender.push(AssistantMessageEvent::ThinkingStart {
-                        content_index: output.content.len() - 1,
-                        partial: output.clone(),
-                    });
-                    sender.push(AssistantMessageEvent::ThinkingDelta {
-                        content_index: output.content.len() - 1,
-                        delta: reasoning_text.clone(),
-                        partial: output.clone(),
-                    });
-                }
-            }
-        }
+    if let Some(reasoning) = extract_reasoning(delta) {
+        handle_reasoning_delta(reasoning, output, sender, current_block);
     }
 
-    // Handle tool calls
     if let Some(tool_calls) = &delta.tool_calls {
-        for tc in tool_calls {
-            let should_start_new = match current_block {
-                Some(CurrentBlock::ToolCall { id, .. }) => {
-                    tc.id.as_ref().is_some_and(|new_id| new_id != id)
-                }
-                _ => true,
-            };
+        handle_tool_calls(tool_calls, output, sender, current_block);
+    }
+}
 
-            if should_start_new {
-                finish_current_block(current_block, output, sender);
-                *current_block = Some(CurrentBlock::ToolCall {
-                    id: tc.id.clone().unwrap_or_default(),
-                    name: tc
-                        .function
-                        .as_ref()
-                        .and_then(|f| f.name.clone())
-                        .unwrap_or_default(),
-                    partial_args: String::new(),
-                });
-                output.content.push(Content::tool_call(
-                    tc.id.clone().unwrap_or_default(),
-                    tc.function
-                        .as_ref()
-                        .and_then(|f| f.name.clone())
-                        .unwrap_or_default(),
-                    serde_json::Value::Object(serde_json::Map::new()),
-                ));
-                sender.push(AssistantMessageEvent::ToolCallStart {
-                    content_index: output.content.len() - 1,
-                    partial: output.clone(),
-                });
-            }
+fn update_usage_from_chunk(usage: &StreamUsage, output: &mut AssistantMessage) {
+    let cached_tokens = usage
+        .prompt_tokens_details
+        .as_ref()
+        .and_then(|d| d.cached_tokens)
+        .unwrap_or(0);
+    let reasoning_tokens = usage
+        .completion_tokens_details
+        .as_ref()
+        .and_then(|d| d.reasoning_tokens)
+        .unwrap_or(0);
+    let input = usage.prompt_tokens.saturating_sub(cached_tokens);
+    let output_tokens = usage.completion_tokens + reasoning_tokens;
 
-            if let Some(CurrentBlock::ToolCall {
-                id,
-                name,
-                partial_args,
-            }) = current_block
-            {
-                if let Some(new_id) = &tc.id {
-                    *id = new_id.clone();
-                }
-                if let Some(f) = &tc.function {
-                    if let Some(n) = &f.name {
-                        *name = n.clone();
-                    }
-                    if let Some(args) = &f.arguments {
-                        partial_args.push_str(args);
-                        sender.push(AssistantMessageEvent::ToolCallDelta {
-                            content_index: output.content.len() - 1,
-                            delta: args.clone(),
-                            partial: output.clone(),
-                        });
-                    }
-                }
-            }
+    output.usage = Usage {
+        input,
+        output: output_tokens,
+        cache_read: cached_tokens,
+        cache_write: 0,
+        total_tokens: input + output_tokens + cached_tokens,
+        ..Default::default()
+    };
+}
+
+fn extract_reasoning(delta: &StreamDelta) -> Option<ReasoningDelta<'_>> {
+    if let Some(text) = delta.reasoning_content.as_deref() {
+        return Some(ReasoningDelta {
+            text,
+            signature: REASONING_CONTENT_FIELD,
+        });
+    }
+
+    if let Some(text) = delta.reasoning.as_deref() {
+        return Some(ReasoningDelta {
+            text,
+            signature: REASONING_FIELD,
+        });
+    }
+
+    delta.reasoning_text.as_deref().map(|text| ReasoningDelta {
+        text,
+        signature: REASONING_TEXT_FIELD,
+    })
+}
+
+fn handle_text_delta(
+    content: &str,
+    output: &mut AssistantMessage,
+    sender: &mut EventStreamSender,
+    current_block: &mut Option<CurrentBlock>,
+) {
+    if content.is_empty() {
+        return;
+    }
+
+    match current_block {
+        Some(CurrentBlock::Text { text }) => {
+            text.push_str(content);
+            sender.push(AssistantMessageEvent::TextDelta {
+                content_index: output.content.len().saturating_sub(1),
+                delta: content.to_string(),
+                partial: output.clone(),
+            });
+        }
+        _ => {
+            finish_current_block(current_block, output, sender);
+            let text = content.to_string();
+            *current_block = Some(CurrentBlock::Text { text: text.clone() });
+            output.content.push(Content::text(""));
+            let content_index = output.content.len() - 1;
+            sender.push(AssistantMessageEvent::TextStart {
+                content_index,
+                partial: output.clone(),
+            });
+            sender.push(AssistantMessageEvent::TextDelta {
+                content_index,
+                delta: text,
+                partial: output.clone(),
+            });
+        }
+    }
+}
+
+fn handle_reasoning_delta(
+    reasoning: ReasoningDelta<'_>,
+    output: &mut AssistantMessage,
+    sender: &mut EventStreamSender,
+    current_block: &mut Option<CurrentBlock>,
+) {
+    if reasoning.text.is_empty() {
+        return;
+    }
+
+    match current_block {
+        Some(CurrentBlock::Thinking { thinking, .. }) => {
+            thinking.push_str(reasoning.text);
+            sender.push(AssistantMessageEvent::ThinkingDelta {
+                content_index: output.content.len().saturating_sub(1),
+                delta: reasoning.text.to_string(),
+                partial: output.clone(),
+            });
+        }
+        _ => {
+            finish_current_block(current_block, output, sender);
+            let thinking = reasoning.text.to_string();
+            *current_block = Some(CurrentBlock::Thinking {
+                thinking: thinking.clone(),
+                signature: reasoning.signature.to_string(),
+            });
+            output.content.push(Content::thinking(""));
+            let content_index = output.content.len() - 1;
+            sender.push(AssistantMessageEvent::ThinkingStart {
+                content_index,
+                partial: output.clone(),
+            });
+            sender.push(AssistantMessageEvent::ThinkingDelta {
+                content_index,
+                delta: thinking,
+                partial: output.clone(),
+            });
+        }
+    }
+}
+
+fn handle_tool_calls(
+    tool_calls: &[StreamToolCall],
+    output: &mut AssistantMessage,
+    sender: &mut EventStreamSender,
+    current_block: &mut Option<CurrentBlock>,
+) {
+    for tool_call in tool_calls {
+        if should_start_new_tool_call(current_block, tool_call) {
+            start_tool_call_block(tool_call, output, sender, current_block);
+        }
+
+        apply_tool_call_delta(tool_call, output, sender, current_block);
+    }
+}
+
+fn should_start_new_tool_call(
+    current_block: &Option<CurrentBlock>,
+    tool_call: &StreamToolCall,
+) -> bool {
+    match current_block {
+        Some(CurrentBlock::ToolCall { id, .. }) => {
+            tool_call.id.as_ref().is_some_and(|new_id| new_id != id)
+        }
+        _ => true,
+    }
+}
+
+fn start_tool_call_block(
+    tool_call: &StreamToolCall,
+    output: &mut AssistantMessage,
+    sender: &mut EventStreamSender,
+    current_block: &mut Option<CurrentBlock>,
+) {
+    finish_current_block(current_block, output, sender);
+
+    let id = tool_call.id.clone().unwrap_or_default();
+    let name = tool_call
+        .function
+        .as_ref()
+        .and_then(|f| f.name.clone())
+        .unwrap_or_default();
+
+    *current_block = Some(CurrentBlock::ToolCall {
+        id: id.clone(),
+        name: name.clone(),
+        partial_args: String::new(),
+    });
+    output.content.push(Content::tool_call(
+        id,
+        name,
+        serde_json::Value::Object(serde_json::Map::new()),
+    ));
+    sender.push(AssistantMessageEvent::ToolCallStart {
+        content_index: output.content.len() - 1,
+        partial: output.clone(),
+    });
+}
+
+fn apply_tool_call_delta(
+    tool_call: &StreamToolCall,
+    output: &mut AssistantMessage,
+    sender: &mut EventStreamSender,
+    current_block: &mut Option<CurrentBlock>,
+) {
+    let Some(CurrentBlock::ToolCall {
+        id,
+        name,
+        partial_args,
+    }) = current_block
+    else {
+        return;
+    };
+
+    if let Some(new_id) = &tool_call.id {
+        *id = new_id.clone();
+    }
+
+    if let Some(function) = &tool_call.function {
+        if let Some(new_name) = &function.name {
+            *name = new_name.clone();
+        }
+        if let Some(args) = &function.arguments {
+            partial_args.push_str(args);
+            sender.push(AssistantMessageEvent::ToolCallDelta {
+                content_index: output.content.len() - 1,
+                delta: args.clone(),
+                partial: output.clone(),
+            });
         }
     }
 }
@@ -541,7 +615,33 @@ fn convert_messages(
 ) -> serde_json::Value {
     let mut messages = Vec::new();
 
-    // System prompt
+    push_system_prompt(&mut messages, model, context, compat);
+
+    for msg in &context.messages {
+        match msg {
+            crate::types::Message::User(user) => {
+                messages.push(convert_user_message(model, user));
+            }
+            crate::types::Message::Assistant(assistant) => {
+                if let Some(converted) = convert_assistant_message(assistant) {
+                    messages.push(converted);
+                }
+            }
+            crate::types::Message::ToolResult(result) => {
+                messages.push(convert_tool_result(result, compat));
+            }
+        }
+    }
+
+    json!(messages)
+}
+
+fn push_system_prompt(
+    messages: &mut Vec<serde_json::Value>,
+    model: &Model<OpenAICompletions>,
+    context: &Context,
+    compat: &ResolvedCompat,
+) {
     if let Some(system) = &context.system_prompt {
         let role = if model.reasoning && compat.supports_developer_role {
             "developer"
@@ -553,117 +653,134 @@ fn convert_messages(
             "content": system,
         }));
     }
+}
 
-    // Convert messages
-    for msg in &context.messages {
-        match msg {
-            crate::types::Message::User(user) => {
-                let content = match &user.content {
-                    crate::types::UserContent::Text(text) => json!(text),
-                    crate::types::UserContent::Multi(blocks) => {
-                        let parts: Vec<serde_json::Value> = blocks
-                            .iter()
-                            .filter_map(|block| match block {
-                                crate::types::UserContentBlock::Text(t) => {
-                                    Some(json!({ "type": "text", "text": t.text }))
-                                }
-                                crate::types::UserContentBlock::Image(img) => {
-                                    if model.input.contains(&crate::types::InputType::Image) {
-                                        Some(json!({
-                                            "type": "image_url",
-                                            "image_url": {
-                                                "url": format!("data:{};base64,{}", img.mime_type, img.to_base64())
-                                            }
-                                        }))
-                                    } else {
-                                        None
-                                    }
-                                }
-                            })
-                            .collect();
-                        json!(parts)
+fn convert_user_message(
+    model: &Model<OpenAICompletions>,
+    user: &crate::types::UserMessage,
+) -> serde_json::Value {
+    let content = user_content_to_json(model, &user.content);
+    json!({
+        "role": "user",
+        "content": content,
+    })
+}
+
+fn user_content_to_json(
+    model: &Model<OpenAICompletions>,
+    content: &crate::types::UserContent,
+) -> serde_json::Value {
+    match content {
+        crate::types::UserContent::Text(text) => json!(text),
+        crate::types::UserContent::Multi(blocks) => {
+            let parts: Vec<serde_json::Value> = blocks
+                .iter()
+                .filter_map(|block| match block {
+                    crate::types::UserContentBlock::Text(t) => {
+                        Some(json!({ "type": "text", "text": t.text }))
                     }
-                };
-                messages.push(json!({
-                    "role": "user",
-                    "content": content,
-                }));
-            }
-            crate::types::Message::Assistant(assistant) => {
-                let mut msg = json!({
-                    "role": "assistant",
-                });
-
-                // Collect text content
-                let text_parts: Vec<String> = assistant
-                    .content
-                    .iter()
-                    .filter_map(|c| match c {
-                        Content::Text { inner } if !inner.text.is_empty() => {
-                            Some(inner.text.clone())
+                    crate::types::UserContentBlock::Image(img) => {
+                        if model.input.contains(&crate::types::InputType::Image) {
+                            Some(json!({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": format!("data:{};base64,{}", img.mime_type, img.to_base64())
+                                }
+                            }))
+                        } else {
+                            None
                         }
-                        _ => None,
-                    })
-                    .collect();
-
-                if !text_parts.is_empty() {
-                    msg["content"] = json!(text_parts
-                        .iter()
-                        .map(|t| json!({ "type": "text", "text": t }))
-                        .collect::<Vec<_>>());
-                }
-
-                // Collect tool calls
-                let tool_calls: Vec<serde_json::Value> = assistant
-                    .content
-                    .iter()
-                    .filter_map(|c| match c {
-                        Content::ToolCall { inner } => Some(json!({
-                            "id": inner.id,
-                            "type": "function",
-                            "function": {
-                                "name": inner.name,
-                                "arguments": inner.arguments.to_string(),
-                            }
-                        })),
-                        _ => None,
-                    })
-                    .collect();
-
-                if !tool_calls.is_empty() {
-                    msg["tool_calls"] = json!(tool_calls);
-                }
-
-                // Skip empty assistant messages
-                if msg.get("content").is_none() && msg.get("tool_calls").is_none() {
-                    continue;
-                }
-
-                messages.push(msg);
-            }
-            crate::types::Message::ToolResult(result) => {
-                let mut msg = json!({
-                    "role": "tool",
-                    "tool_call_id": result.tool_call_id,
-                    "content": result.content.iter()
-                        .filter_map(|c| match c {
-                            crate::types::message::ToolResultContent::Text(t) => Some(t.text.clone()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                });
-
-                if compat.requires_tool_result_name {
-                    msg["name"] = json!(result.tool_name);
-                }
-
-                messages.push(msg);
-            }
+                    }
+                })
+                .collect();
+            json!(parts)
         }
     }
+}
 
-    json!(messages)
+fn convert_assistant_message(
+    assistant: &crate::types::AssistantMessage,
+) -> Option<serde_json::Value> {
+    let mut msg = json!({
+        "role": "assistant",
+    });
+
+    let text_parts = assistant_text_parts(assistant);
+
+    if !text_parts.is_empty() {
+        msg["content"] = json!(text_parts
+            .iter()
+            .map(|text| json!({ "type": "text", "text": text }))
+            .collect::<Vec<_>>());
+    }
+
+    let tool_calls = assistant_tool_calls(assistant);
+
+    if !tool_calls.is_empty() {
+        msg["tool_calls"] = json!(tool_calls);
+    }
+
+    if msg.get("content").is_none() && msg.get("tool_calls").is_none() {
+        return None;
+    }
+
+    Some(msg)
+}
+
+fn assistant_text_parts(assistant: &crate::types::AssistantMessage) -> Vec<String> {
+    assistant
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            Content::Text { inner } if !inner.text.is_empty() => Some(inner.text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn assistant_tool_calls(assistant: &crate::types::AssistantMessage) -> Vec<serde_json::Value> {
+    assistant
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            Content::ToolCall { inner } => Some(json!({
+                "id": inner.id,
+                "type": "function",
+                "function": {
+                    "name": inner.name,
+                    "arguments": inner.arguments.to_string(),
+                }
+            })),
+            _ => None,
+        })
+        .collect()
+}
+
+fn convert_tool_result(
+    result: &crate::types::ToolResultMessage,
+    compat: &ResolvedCompat,
+) -> serde_json::Value {
+    let content = result
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            crate::types::message::ToolResultContent::Text(text) => Some(text.text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut msg = json!({
+        "role": "tool",
+        "tool_call_id": result.tool_call_id,
+        "content": content,
+    });
+
+    if compat.requires_tool_result_name {
+        msg["name"] = json!(result.tool_name);
+    }
+
+    msg
 }
 
 fn convert_tools(tools: &[Tool]) -> serde_json::Value {
