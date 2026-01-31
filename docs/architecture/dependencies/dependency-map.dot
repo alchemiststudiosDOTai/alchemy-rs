@@ -1,0 +1,85 @@
+digraph dependencies {
+  rankdir=LR;
+  node [shape=box, fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9, arrowsize=0.7];
+  "error";
+  "providers";
+  "providers::env";
+  "providers::openai_completions";
+  "providers::shared";
+  "providers::shared::http";
+  "providers::shared::timestamp";
+  "stream";
+  "transform";
+  "types";
+  "types::api";
+  "types::compat";
+  "types::content";
+  "types::event";
+  "types::event_stream";
+  "types::message";
+  "types::model";
+  "types::options";
+  "types::overflow";
+  "types::tool";
+  "types::usage";
+  "types::validation";
+  "utils";
+  "utils::json_parse";
+  "utils::sanitize";
+  "providers" -> "providers::env" [color="#2e7d32", label="ok", penwidth=1.2];
+  "providers" -> "providers::openai_completions" [color="#2e7d32", label="ok", penwidth=1.2];
+  "providers::env" -> "providers" [color="#2e7d32", label="ok", penwidth=1.2];
+  "providers::env" -> "types" [color="#2e7d32", label="ok", penwidth=1.2];
+  "providers::openai_completions" -> "providers" [color="#2e7d32", label="ok", penwidth=1.2];
+  "providers::openai_completions" -> "providers::shared" [color="#2e7d32", label="ok", penwidth=1.2];
+  "providers::openai_completions" -> "types" [color="#2e7d32", label="ok", penwidth=1.2];
+  "providers::shared::http" -> "providers::shared" [color="#2e7d32", label="ok", penwidth=1.2];
+  "providers::shared::timestamp" -> "providers::shared" [color="#2e7d32", label="ok", penwidth=1.2];
+  "stream" -> "error" [color="#616161", label="n/a", penwidth=1.0];
+  "stream" -> "providers" [color="#2e7d32", label="ok", penwidth=1.2];
+  "stream" -> "types" [color="#2e7d32", label="ok", penwidth=1.2];
+  "transform" -> "types" [color="#616161", label="n/a", penwidth=1.0];
+  "types" -> "types::api" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::compat" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::content" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::event" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::event_stream" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::message" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::model" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::options" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::overflow" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::tool" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::usage" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types" -> "types::validation" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::compat" -> "types::api" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::event" -> "types::content" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::event" -> "types::message" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::event" -> "types::usage" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::event_stream" -> "error" [color="#616161", label="n/a", penwidth=1.0];
+  "types::event_stream" -> "types" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::message" -> "types::content" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::message" -> "types::tool" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::message" -> "types::usage" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::model" -> "types::api" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::model" -> "types::compat" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::model" -> "types::usage" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::overflow" -> "types" [color="#2e7d32", label="ok", penwidth=1.2];
+  "types::validation" -> "error" [color="#616161", label="n/a", penwidth=1.0];
+  "types::validation" -> "types" [color="#2e7d32", label="ok", penwidth=1.2];
+  "utils" -> "utils::json_parse" [color="#2e7d32", label="ok", penwidth=1.2];
+  "utils" -> "utils::sanitize" [color="#2e7d32", label="ok", penwidth=1.2];
+  "utils::json_parse" -> "utils" [color="#2e7d32", label="ok", penwidth=1.2];
+  "utils::sanitize" -> "utils" [color="#2e7d32", label="ok", penwidth=1.2];
+  subgraph cluster_legend {
+    label="Legend";
+    fontsize=10;
+    legend [shape=plaintext, label=<
+      <table border="0" cellborder="1" cellspacing="0" cellpadding="4">
+        <tr><td><font color="#2e7d32">ok</font></td><td>dependency follows intended layer order</td></tr>
+        <tr><td><font color="#c62828">violation</font></td><td>lower layer depends on higher (stream → providers → types → utils)</td></tr>
+        <tr><td><font color="#616161">n/a</font></td><td>outside layer set</td></tr>
+      </table>
+    >];
+  }
+}

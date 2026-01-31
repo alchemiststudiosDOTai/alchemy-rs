@@ -65,14 +65,17 @@ pub use transform::{
 ### Utilities
 
 ```rust
+pub use types::{
+    is_context_overflow,     // Detect context overflow
+    validate_tool_arguments, // Validate tool call arguments
+    validate_tool_call,      // Validate tool against tools
+};
+
 pub use utils::{
-    is_context_overflow,         // Detect context overflow
-    parse_streaming_json,        // Parse incomplete JSON
-    parse_streaming_json_smart,  // Smart partial JSON parsing
-    sanitize_for_api,            // Sanitize strings for API
-    sanitize_surrogates,         // Remove UTF-16 surrogates
-    validate_tool_arguments,     // Validate tool call arguments
-    validate_tool_call,          // Validate tool against tools
+    parse_streaming_json,       // Parse incomplete JSON
+    parse_streaming_json_smart, // Smart partial JSON parsing
+    sanitize_for_api,           // Sanitize strings for API
+    sanitize_surrogates,        // Remove UTF-16 surrogates
 };
 ```
 

@@ -5,8 +5,8 @@ use futures::channel::mpsc;
 use futures::Stream;
 use tokio::sync::oneshot;
 
+use super::{AssistantMessage, AssistantMessageEvent};
 use crate::error::{Error, Result};
-use crate::types::{AssistantMessage, AssistantMessageEvent};
 
 /// A stream of assistant message events.
 ///

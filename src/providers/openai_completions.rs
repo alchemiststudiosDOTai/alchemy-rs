@@ -5,11 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::shared::{build_http_client, unix_timestamp_millis};
-use crate::stream::{AssistantMessageEventStream, EventStreamSender};
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEvent, Content, Context, KnownProvider, MaxTokensField,
-    Model, OpenAICompletions, Provider, StopReason, StopReasonError, StopReasonSuccess,
-    ThinkingFormat, Tool, ToolCall, Usage,
+    Api, AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream, Content, Context,
+    EventStreamSender, KnownProvider, MaxTokensField, Model, OpenAICompletions, Provider,
+    StopReason, StopReasonError, StopReasonSuccess, ThinkingFormat, Tool, ToolCall, Usage,
 };
 
 /// Options for OpenAI completions streaming.

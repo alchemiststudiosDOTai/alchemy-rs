@@ -3,8 +3,8 @@
 //! Validates tool call arguments against the tool's JSON schema definition,
 //! returning useful error messages when validation fails.
 
+use super::{Tool, ToolCall};
 use crate::error::{Error, Result};
-use crate::types::{Tool, ToolCall};
 use jsonschema::{Draft, JSONSchema};
 
 /// Validate a tool call against available tools.
@@ -19,7 +19,7 @@ use jsonschema::{Draft, JSONSchema};
 /// # Example
 ///
 /// ```ignore
-/// use alchemy::utils::validation::validate_tool_call;
+/// use alchemy::validate_tool_call;
 ///
 /// let tools = vec![weather_tool];
 /// let tool_call = ToolCall { name: "get_weather".into(), .. };
