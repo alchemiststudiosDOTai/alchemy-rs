@@ -1,9 +1,9 @@
 //! Test tool calling with OpenRouter
 
-use alchemy::providers::openai_completions::{
+use alchemy_llm::providers::openai_completions::{
     stream_openai_completions, OpenAICompletionsOptions, ToolChoice,
 };
-use alchemy::types::{
+use alchemy_llm::types::{
     AssistantMessageEvent, Context, InputType, Model, ModelCost, OpenAICompletions, Provider, Tool,
     UserContent, UserMessage,
 };
@@ -60,7 +60,7 @@ async fn main() {
 
     let context = Context {
         system_prompt: Some("You are a helpful assistant with access to weather data.".to_string()),
-        messages: vec![alchemy::types::Message::User(UserMessage {
+        messages: vec![alchemy_llm::types::Message::User(UserMessage {
             content: UserContent::Text("What's the weather like in San Francisco?".to_string()),
             timestamp: 0,
         })],

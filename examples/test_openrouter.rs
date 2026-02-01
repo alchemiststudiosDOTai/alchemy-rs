@@ -1,7 +1,7 @@
 //! Quick test of OpenRouter API
 
-use alchemy::providers::{stream_openai_completions, OpenAICompletionsOptions};
-use alchemy::types::{
+use alchemy_llm::providers::{stream_openai_completions, OpenAICompletionsOptions};
+use alchemy_llm::types::{
     AssistantMessageEvent, Context, InputType, Model, ModelCost, OpenAICompletions, Provider,
     UserContent, UserMessage,
 };
@@ -36,7 +36,7 @@ async fn main() {
 
     let context = Context {
         system_prompt: Some("You are a helpful assistant.".to_string()),
-        messages: vec![alchemy::types::Message::User(UserMessage {
+        messages: vec![alchemy_llm::types::Message::User(UserMessage {
             content: UserContent::Text("Say hello in one sentence!".to_string()),
             timestamp: 0,
         })],

@@ -59,8 +59,8 @@
 //! | Done           | Stream complete             | reason, final message       |
 //! | Error          | Something failed            | reason, error message       |
 
-use alchemy::providers::{stream_openai_completions, OpenAICompletionsOptions};
-use alchemy::types::{
+use alchemy_llm::providers::{stream_openai_completions, OpenAICompletionsOptions};
+use alchemy_llm::types::{
     AssistantMessageEvent, Context, InputType, Model, ModelCost, OpenAICompletions, Provider,
     UserContent, UserMessage,
 };
@@ -104,7 +104,7 @@ async fn main() {
     println!("═══ INPUT: Context ═══");
     let context = Context {
         system_prompt: Some("You are a helpful assistant. Be concise.".to_string()),
-        messages: vec![alchemy::types::Message::User(UserMessage {
+        messages: vec![alchemy_llm::types::Message::User(UserMessage {
             content: UserContent::Text(
                 "Explain what Rust ownership is in 2 sentences.".to_string(),
             ),
@@ -114,7 +114,7 @@ async fn main() {
     };
     println!("  system: {:?}", context.system_prompt);
     println!("  messages: {} message(s)", context.messages.len());
-    if let alchemy::types::Message::User(u) = &context.messages[0] {
+    if let alchemy_llm::types::Message::User(u) = &context.messages[0] {
         println!("  user: {:?}", u.content);
     }
     println!();

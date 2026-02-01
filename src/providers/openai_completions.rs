@@ -8,8 +8,8 @@ use super::shared::{build_http_client, unix_timestamp_millis};
 use crate::stream::{AssistantMessageEventStream, EventStreamSender};
 use crate::types::{
     Api, AssistantMessage, AssistantMessageEvent, Content, Context, KnownProvider, MaxTokensField,
-    Model, OpenAICompletions, Provider, StopReason, StopReasonError, StopReasonSuccess,
-    ThinkingFormat, Tool, ToolCall, Usage,
+    Model, OpenAICompletions, OpenAICompletionsCompat, Provider, StopReason, StopReasonError,
+    StopReasonSuccess, ThinkingFormat, Tool, ToolCall, Usage,
 };
 
 /// Options for OpenAI completions streaming.
@@ -58,6 +58,39 @@ struct ResolvedCompat {
     requires_thinking_as_text: bool,
     requires_mistral_tool_ids: bool,
     thinking_format: ThinkingFormat,
+}
+
+impl From<(ResolvedCompat, &OpenAICompletionsCompat)> for ResolvedCompat {
+    fn from((detected, explicit): (ResolvedCompat, &OpenAICompletionsCompat)) -> Self {
+        Self {
+            supports_store: explicit.supports_store.unwrap_or(detected.supports_store),
+            supports_developer_role: explicit
+                .supports_developer_role
+                .unwrap_or(detected.supports_developer_role),
+            supports_reasoning_effort: explicit
+                .supports_reasoning_effort
+                .unwrap_or(detected.supports_reasoning_effort),
+            supports_usage_in_streaming: explicit
+                .supports_usage_in_streaming
+                .unwrap_or(detected.supports_usage_in_streaming),
+            max_tokens_field: explicit
+                .max_tokens_field
+                .unwrap_or(detected.max_tokens_field),
+            requires_tool_result_name: explicit
+                .requires_tool_result_name
+                .unwrap_or(detected.requires_tool_result_name),
+            requires_assistant_after_tool_result: explicit
+                .requires_assistant_after_tool_result
+                .unwrap_or(detected.requires_assistant_after_tool_result),
+            requires_thinking_as_text: explicit
+                .requires_thinking_as_text
+                .unwrap_or(detected.requires_thinking_as_text),
+            requires_mistral_tool_ids: explicit
+                .requires_mistral_tool_ids
+                .unwrap_or(detected.requires_mistral_tool_ids),
+            thinking_format: explicit.thinking_format.unwrap_or(detected.thinking_format),
+        }
+    }
 }
 
 /// Stream completions from an OpenAI-compatible API.
@@ -857,37 +890,9 @@ fn detect_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
 fn resolve_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
     let detected = detect_compat(model);
 
-    let Some(explicit) = &model.compat else {
-        return detected;
-    };
-
-    ResolvedCompat {
-        supports_store: explicit.supports_store.unwrap_or(detected.supports_store),
-        supports_developer_role: explicit
-            .supports_developer_role
-            .unwrap_or(detected.supports_developer_role),
-        supports_reasoning_effort: explicit
-            .supports_reasoning_effort
-            .unwrap_or(detected.supports_reasoning_effort),
-        supports_usage_in_streaming: explicit
-            .supports_usage_in_streaming
-            .unwrap_or(detected.supports_usage_in_streaming),
-        max_tokens_field: explicit
-            .max_tokens_field
-            .unwrap_or(detected.max_tokens_field),
-        requires_tool_result_name: explicit
-            .requires_tool_result_name
-            .unwrap_or(detected.requires_tool_result_name),
-        requires_assistant_after_tool_result: explicit
-            .requires_assistant_after_tool_result
-            .unwrap_or(detected.requires_assistant_after_tool_result),
-        requires_thinking_as_text: explicit
-            .requires_thinking_as_text
-            .unwrap_or(detected.requires_thinking_as_text),
-        requires_mistral_tool_ids: explicit
-            .requires_mistral_tool_ids
-            .unwrap_or(detected.requires_mistral_tool_ids),
-        thinking_format: explicit.thinking_format.unwrap_or(detected.thinking_format),
+    match model.compat.as_ref() {
+        Some(explicit) => ResolvedCompat::from((detected, explicit)),
+        None => detected,
     }
 }
 
