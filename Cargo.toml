@@ -1,9 +1,28 @@
 [package]
-name = "alchemy"
+name = "alchemy-llm"
 version = "0.1.0"
 edition = "2021"
-description = "Unified LLM API with automatic model discovery and provider configuration"
+rust-version = "1.70"
+description = "Unified LLM API abstraction layer supporting 8+ providers through a consistent streaming interface"
 license = "MIT"
+readme = "README.md"
+repository = "https://github.com/alchemiststudiosDOTai/alchemy-rs"
+homepage = "https://github.com/alchemiststudiosDOTai/alchemy-rs"
+documentation = "https://docs.rs/alchemy-llm"
+keywords = ["llm", "ai", "openai", "anthropic", "streaming"]
+categories = ["api-bindings", "asynchronous"]
+exclude = [
+    ".github/",
+    ".cargo-husky/",
+    "memory-bank/",
+    "website/*",
+    "docs/",
+    "assets/",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".env*",
+    "Makefile",
+]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

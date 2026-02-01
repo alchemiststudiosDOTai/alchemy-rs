@@ -56,7 +56,7 @@ async fn main() -> alchemy::Result<()> {
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/tunahorse/alchemy-rs.git
+   git clone https://github.com/alchemiststudiosDOTai/alchemy-rs.git
    cd alchemy-rs
    ```
 
