@@ -1,6 +1,6 @@
 [package]
 name = "alchemy-llm"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.70"
 description = "Unified LLM API abstraction layer supporting 8+ providers through a consistent streaming interface"
