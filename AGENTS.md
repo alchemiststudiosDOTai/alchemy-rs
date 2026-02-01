@@ -204,3 +204,22 @@ Types: bug, smell, pattern, lesson, antipattern
 **Phase 1 Remaining:** EventStream (#1), Model Registry (#2)
 **Tests:** None yet - build as we go
 **Docs:** Phase plans complete, inline docs as we implement
+
+---
+
+## Deployment
+
+Published to crates.io as `alchemy-llm`.
+
+```bash
+# Verify package
+cargo package --list
+
+# Dry run
+cargo publish --dry-run
+
+# Publish new version
+cargo publish
+```
+
+**Skill:** `crate-publisher` - Use when publishing updates to crates.io.

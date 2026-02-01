@@ -201,3 +201,14 @@ Types: bug, smell, pattern, lesson, antipattern
 
 ---
 
+## Deployment
+
+Published to crates.io as [`alchemy-llm`](https://crates.io/crates/alchemy-llm).
+
+```bash
+# Bump version in Cargo.toml, then:
+cargo publish --dry-run
+cargo publish
+```
+
+**Skill:** `crate-publisher` (global) - handles crate packaging and publishing workflow.
