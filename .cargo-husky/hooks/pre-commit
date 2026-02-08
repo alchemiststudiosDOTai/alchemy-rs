@@ -1,16 +1,50 @@
 #!/bin/sh
 # Pre-commit hook managed by cargo-husky
-# Runs formatting and linting checks before each commit
+# Runs formatting, linting, and quality checks before each commit
 
 set -e
 
-echo "Running cargo fmt..."
+MAX_FILE_SIZE_KB=500
+
+echo "=== Large File Detection ==="
+# Check for files larger than MAX_FILE_SIZE_KB KB being committed
+large_files=$(git diff --cached --name-only --diff-filter=A | while read file; do
+    if [ -f "$file" ]; then
+        size_kb=$(du -k "$file" 2>/dev/null | cut -f1)
+        if [ "$size_kb" -gt "$MAX_FILE_SIZE_KB" ]; then
+            echo "$file ($size_kb KB)"
+        fi
+    fi
+done)
+
+if [ -n "$large_files" ]; then
+    echo "ERROR: Files exceeding ${MAX_FILE_SIZE_KB}KB found:"
+    echo "$large_files"
+    echo "Commit aborted. Use 'git commit --no-verify' to bypass."
+    exit 1
+fi
+echo "✓ No large files detected"
+
+echo "=== Code Formatting ==="
 cargo fmt --all -- --check
 
-echo "Running cargo clippy..."
+echo "=== Linting ==="
 cargo clippy --all-targets --all-features -- -D warnings
 
-echo "Running cargo check..."
+echo "=== Type Checking ==="
 cargo check --all-targets --all-features
 
+echo "=== Dead Code Detection ==="
+cargo clippy --all-targets --all-features -- -W dead_code 2>&1 | grep -E "dead_code|is never used" || true
+echo "✓ Dead code check complete"
+
+echo "=== Duplicate Code Detection ==="
+if command -v polydup >/dev/null 2>&1; then
+    polydup --min-tokens 100 --similarity 0.9 src/ 2>/dev/null || true
+else
+    echo "⚠ polydup not installed. Run: cargo install polydup-cli"
+fi
+echo "✓ Duplicate check complete"
+
+echo ""
 echo "✓ All pre-commit checks passed"
