@@ -5,6 +5,7 @@ pub use event_stream::{AssistantMessageEventStream, EventStreamSender};
 use crate::error::{Error, Result};
 use crate::providers::{get_env_api_key, stream_openai_completions, OpenAICompletionsOptions};
 use crate::types::{Api, AssistantMessage, Context, Model, OpenAICompletions};
+use std::any::Any;
 
 /// Stream a completion from an OpenAI-compatible model.
 ///
@@ -22,7 +23,7 @@ pub fn stream<TApi>(
     options: Option<OpenAICompletionsOptions>,
 ) -> Result<AssistantMessageEventStream>
 where
-    TApi: crate::types::ApiType,
+    TApi: crate::types::ApiType + 'static,
 {
     let api = model.api.api();
 
@@ -47,10 +48,16 @@ where
 
     match api {
         Api::OpenAICompletions => {
-            // SAFETY: We know the model has OpenAICompletions API type
-            // This is a type-level guarantee from the match
-            let model_ptr = model as *const Model<TApi> as *const Model<OpenAICompletions>;
-            let openai_model = unsafe { &*model_ptr };
+            // `api` is a runtime value. Ensure the compile-time type parameter `TApi`
+            // actually is `OpenAICompletions` before proceeding.
+            let openai_model = (model as &dyn Any)
+                .downcast_ref::<Model<OpenAICompletions>>()
+                .ok_or_else(|| {
+                    Error::InvalidResponse(
+                        "Model/api type mismatch: api() returned openai-completions, but model is not Model<OpenAICompletions>".to_string(),
+                    )
+                })?;
+
             Ok(stream_openai_completions(
                 openai_model,
                 context,
@@ -85,7 +92,7 @@ pub async fn complete<TApi>(
     options: Option<OpenAICompletionsOptions>,
 ) -> Result<AssistantMessage>
 where
-    TApi: crate::types::ApiType,
+    TApi: crate::types::ApiType + 'static,
 {
     let s = stream(model, context, options)?;
     s.result().await
