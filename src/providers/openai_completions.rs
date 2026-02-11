@@ -172,40 +172,44 @@ async fn run_stream_inner(
         partial: output.clone(),
     });
 
-    // Track current content block state
+    // Process SSE stream via ChunkProcessor
     let mut current_block: Option<CurrentBlock> = None;
+    {
+        let mut processor = ChunkProcessor {
+            output,
+            sender,
+            current_block: &mut current_block,
+        };
 
-    // Process SSE stream
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
+        let mut stream = response.bytes_stream();
+        let mut buffer = String::new();
 
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result?;
+            buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-        // Process complete SSE lines
-        while let Some(line_end) = buffer.find('\n') {
-            let line = buffer[..line_end].trim().to_string();
-            buffer = buffer[line_end + 1..].to_string();
+            while let Some(line_end) = buffer.find('\n') {
+                let line = buffer[..line_end].trim().to_string();
+                buffer = buffer[line_end + 1..].to_string();
 
-            if line.is_empty() || line.starts_with(':') {
-                continue;
-            }
-
-            if let Some(data) = line.strip_prefix("data: ") {
-                if data == "[DONE]" {
-                    break;
+                if line.is_empty() || line.starts_with(':') {
+                    continue;
                 }
 
-                if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
-                    process_chunk(&chunk, output, sender, &mut current_block);
+                if let Some(data) = line.strip_prefix("data: ") {
+                    if data == "[DONE]" {
+                        break;
+                    }
+
+                    if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
+                        processor.process(&chunk);
+                    }
                 }
             }
         }
-    }
 
-    // Finish any pending block
-    finish_current_block(&mut current_block, output, sender);
+        processor.finish_current_block();
+    }
 
     // Send done event
     sender.push(AssistantMessageEvent::Done {
@@ -221,6 +225,7 @@ async fn run_stream_inner(
     Ok(())
 }
 
+/// Tracks the content block currently being streamed.
 #[derive(Debug)]
 enum CurrentBlock {
     Text {
@@ -228,7 +233,9 @@ enum CurrentBlock {
     },
     Thinking {
         thinking: String,
-        signature: String,
+        /// The provider field name this reasoning came from (e.g. "reasoning_content").
+        /// Preserved so the thinking signature round-trips correctly on block completion.
+        source_field: String,
     },
     ToolCall {
         id: String,
@@ -237,329 +244,321 @@ enum CurrentBlock {
     },
 }
 
-const REASONING_CONTENT_FIELD: &str = "reasoning_content";
-const REASONING_FIELD: &str = "reasoning";
-const REASONING_TEXT_FIELD: &str = "reasoning_text";
-
+/// Extracted reasoning delta from one of the provider-specific fields.
 struct ReasoningDelta<'a> {
     text: &'a str,
-    signature: &'static str,
+    /// Which provider field carried this reasoning content.
+    source_field: &'static str,
 }
 
-fn process_chunk(
-    chunk: &StreamChunk,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    if let Some(usage) = &chunk.usage {
-        update_usage_from_chunk(usage, output);
-    }
+/// Provider field names that may carry reasoning content.
+const FIELD_REASONING_CONTENT: &str = "reasoning_content";
+const FIELD_REASONING: &str = "reasoning";
+const FIELD_REASONING_TEXT: &str = "reasoning_text";
 
-    let Some(choice) = chunk.choices.first() else {
-        return;
-    };
-
-    if let Some(reason) = &choice.finish_reason {
-        output.stop_reason = map_stop_reason(reason);
-    }
-
-    let Some(delta) = &choice.delta else {
-        return;
-    };
-
-    if let Some(content) = delta.content.as_deref() {
-        handle_text_delta(content, output, sender, current_block);
-    }
-
-    if let Some(reasoning) = extract_reasoning(delta) {
-        handle_reasoning_delta(reasoning, output, sender, current_block);
-    }
-
-    if let Some(tool_calls) = &delta.tool_calls {
-        handle_tool_calls(tool_calls, output, sender, current_block);
-    }
+/// Processes SSE stream chunks into [`AssistantMessageEvent`]s.
+///
+/// Encapsulates the mutable output state, event sender, and current block
+/// tracker so each handler method only needs its own delta data.
+struct ChunkProcessor<'a> {
+    output: &'a mut AssistantMessage,
+    sender: &'a mut EventStreamSender,
+    current_block: &'a mut Option<CurrentBlock>,
 }
 
-fn update_usage_from_chunk(usage: &StreamUsage, output: &mut AssistantMessage) {
-    let cached_tokens = usage
-        .prompt_tokens_details
-        .as_ref()
-        .and_then(|d| d.cached_tokens)
-        .unwrap_or(0);
-    let reasoning_tokens = usage
-        .completion_tokens_details
-        .as_ref()
-        .and_then(|d| d.reasoning_tokens)
-        .unwrap_or(0);
-    let input = usage.prompt_tokens.saturating_sub(cached_tokens);
-    let output_tokens = usage.completion_tokens + reasoning_tokens;
+impl<'a> ChunkProcessor<'a> {
+    fn process(&mut self, chunk: &StreamChunk) {
+        if let Some(usage) = &chunk.usage {
+            Self::update_usage(usage, self.output);
+        }
 
-    output.usage = Usage {
-        input,
-        output: output_tokens,
-        cache_read: cached_tokens,
-        cache_write: 0,
-        total_tokens: input + output_tokens + cached_tokens,
-        ..Default::default()
-    };
-}
+        let Some(choice) = chunk.choices.first() else {
+            return;
+        };
 
-fn extract_reasoning(delta: &StreamDelta) -> Option<ReasoningDelta<'_>> {
-    if let Some(text) = delta.reasoning_content.as_deref() {
-        return Some(ReasoningDelta {
+        if let Some(reason) = &choice.finish_reason {
+            self.output.stop_reason = map_stop_reason(reason);
+        }
+
+        let Some(delta) = &choice.delta else {
+            return;
+        };
+
+        if let Some(content) = delta.content.as_deref() {
+            self.handle_text_delta(content);
+        }
+
+        if let Some(reasoning) = Self::extract_reasoning(delta) {
+            self.handle_reasoning_delta(reasoning);
+        }
+
+        if let Some(tool_calls) = &delta.tool_calls {
+            self.handle_tool_calls(tool_calls);
+        }
+    }
+
+    fn update_usage(usage: &StreamUsage, output: &mut AssistantMessage) {
+        let cached_tokens = usage
+            .prompt_tokens_details
+            .as_ref()
+            .and_then(|d| d.cached_tokens)
+            .unwrap_or(0);
+        let reasoning_tokens = usage
+            .completion_tokens_details
+            .as_ref()
+            .and_then(|d| d.reasoning_tokens)
+            .unwrap_or(0);
+        let input = usage.prompt_tokens.saturating_sub(cached_tokens);
+        let output_tokens = usage.completion_tokens + reasoning_tokens;
+
+        output.usage = Usage {
+            input,
+            output: output_tokens,
+            cache_read: cached_tokens,
+            cache_write: 0,
+            total_tokens: input + output_tokens + cached_tokens,
+            ..Default::default()
+        };
+    }
+
+    /// Extracts reasoning text from whichever provider-specific field is present.
+    ///
+    /// Providers use different field names for the same concept:
+    /// - `reasoning_content` (DeepSeek, most common)
+    /// - `reasoning` (some OpenAI-compat providers)
+    /// - `reasoning_text` (fallback)
+    fn extract_reasoning(delta: &StreamDelta) -> Option<ReasoningDelta<'_>> {
+        if let Some(text) = delta.reasoning_content.as_deref() {
+            return Some(ReasoningDelta {
+                text,
+                source_field: FIELD_REASONING_CONTENT,
+            });
+        }
+
+        if let Some(text) = delta.reasoning.as_deref() {
+            return Some(ReasoningDelta {
+                text,
+                source_field: FIELD_REASONING,
+            });
+        }
+
+        delta.reasoning_text.as_deref().map(|text| ReasoningDelta {
             text,
-            signature: REASONING_CONTENT_FIELD,
+            source_field: FIELD_REASONING_TEXT,
+        })
+    }
+
+    // -- Text handling --
+
+    fn handle_text_delta(&mut self, content: &str) {
+        if content.is_empty() {
+            return;
+        }
+
+        match self.current_block {
+            Some(CurrentBlock::Text { text }) => {
+                text.push_str(content);
+                self.sender.push(AssistantMessageEvent::TextDelta {
+                    content_index: self.output.content.len().saturating_sub(1),
+                    delta: content.to_string(),
+                    partial: self.output.clone(),
+                });
+            }
+            _ => {
+                self.finish_current_block();
+                let text = content.to_string();
+                *self.current_block = Some(CurrentBlock::Text { text: text.clone() });
+                self.output.content.push(Content::text(""));
+                let content_index = self.output.content.len() - 1;
+                self.sender.push(AssistantMessageEvent::TextStart {
+                    content_index,
+                    partial: self.output.clone(),
+                });
+                self.sender.push(AssistantMessageEvent::TextDelta {
+                    content_index,
+                    delta: text,
+                    partial: self.output.clone(),
+                });
+            }
+        }
+    }
+
+    // -- Reasoning / thinking handling --
+
+    fn handle_reasoning_delta(&mut self, reasoning: ReasoningDelta<'_>) {
+        if reasoning.text.is_empty() {
+            return;
+        }
+
+        match self.current_block {
+            Some(CurrentBlock::Thinking { thinking, .. }) => {
+                thinking.push_str(reasoning.text);
+                self.sender.push(AssistantMessageEvent::ThinkingDelta {
+                    content_index: self.output.content.len().saturating_sub(1),
+                    delta: reasoning.text.to_string(),
+                    partial: self.output.clone(),
+                });
+            }
+            _ => {
+                self.finish_current_block();
+                let thinking = reasoning.text.to_string();
+                *self.current_block = Some(CurrentBlock::Thinking {
+                    thinking: thinking.clone(),
+                    source_field: reasoning.source_field.to_string(),
+                });
+                self.output.content.push(Content::thinking(""));
+                let content_index = self.output.content.len() - 1;
+                self.sender.push(AssistantMessageEvent::ThinkingStart {
+                    content_index,
+                    partial: self.output.clone(),
+                });
+                self.sender.push(AssistantMessageEvent::ThinkingDelta {
+                    content_index,
+                    delta: thinking,
+                    partial: self.output.clone(),
+                });
+            }
+        }
+    }
+
+    // -- Tool call handling --
+
+    fn handle_tool_calls(&mut self, tool_calls: &[StreamToolCall]) {
+        for tool_call in tool_calls {
+            if self.should_start_new_tool_call(tool_call) {
+                self.start_tool_call_block(tool_call);
+            }
+            self.apply_tool_call_delta(tool_call);
+        }
+    }
+
+    fn should_start_new_tool_call(&self, tool_call: &StreamToolCall) -> bool {
+        match &*self.current_block {
+            Some(CurrentBlock::ToolCall { id, .. }) => {
+                tool_call.id.as_ref().is_some_and(|new_id| new_id != id)
+            }
+            _ => true,
+        }
+    }
+
+    fn start_tool_call_block(&mut self, tool_call: &StreamToolCall) {
+        self.finish_current_block();
+
+        let id = tool_call.id.clone().unwrap_or_default();
+        let name = tool_call
+            .function
+            .as_ref()
+            .and_then(|f| f.name.clone())
+            .unwrap_or_default();
+
+        *self.current_block = Some(CurrentBlock::ToolCall {
+            id: id.clone(),
+            name: name.clone(),
+            partial_args: String::new(),
+        });
+        self.output.content.push(Content::tool_call(
+            id,
+            name,
+            serde_json::Value::Object(serde_json::Map::new()),
+        ));
+        self.sender.push(AssistantMessageEvent::ToolCallStart {
+            content_index: self.output.content.len() - 1,
+            partial: self.output.clone(),
         });
     }
 
-    if let Some(text) = delta.reasoning.as_deref() {
-        return Some(ReasoningDelta {
-            text,
-            signature: REASONING_FIELD,
-        });
-    }
-
-    delta.reasoning_text.as_deref().map(|text| ReasoningDelta {
-        text,
-        signature: REASONING_TEXT_FIELD,
-    })
-}
-
-fn handle_text_delta(
-    content: &str,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    if content.is_empty() {
-        return;
-    }
-
-    match current_block {
-        Some(CurrentBlock::Text { text }) => {
-            text.push_str(content);
-            sender.push(AssistantMessageEvent::TextDelta {
-                content_index: output.content.len().saturating_sub(1),
-                delta: content.to_string(),
-                partial: output.clone(),
-            });
-        }
-        _ => {
-            finish_current_block(current_block, output, sender);
-            let text = content.to_string();
-            *current_block = Some(CurrentBlock::Text { text: text.clone() });
-            output.content.push(Content::text(""));
-            let content_index = output.content.len() - 1;
-            sender.push(AssistantMessageEvent::TextStart {
-                content_index,
-                partial: output.clone(),
-            });
-            sender.push(AssistantMessageEvent::TextDelta {
-                content_index,
-                delta: text,
-                partial: output.clone(),
-            });
-        }
-    }
-}
-
-fn handle_reasoning_delta(
-    reasoning: ReasoningDelta<'_>,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    if reasoning.text.is_empty() {
-        return;
-    }
-
-    match current_block {
-        Some(CurrentBlock::Thinking { thinking, .. }) => {
-            thinking.push_str(reasoning.text);
-            sender.push(AssistantMessageEvent::ThinkingDelta {
-                content_index: output.content.len().saturating_sub(1),
-                delta: reasoning.text.to_string(),
-                partial: output.clone(),
-            });
-        }
-        _ => {
-            finish_current_block(current_block, output, sender);
-            let thinking = reasoning.text.to_string();
-            *current_block = Some(CurrentBlock::Thinking {
-                thinking: thinking.clone(),
-                signature: reasoning.signature.to_string(),
-            });
-            output.content.push(Content::thinking(""));
-            let content_index = output.content.len() - 1;
-            sender.push(AssistantMessageEvent::ThinkingStart {
-                content_index,
-                partial: output.clone(),
-            });
-            sender.push(AssistantMessageEvent::ThinkingDelta {
-                content_index,
-                delta: thinking,
-                partial: output.clone(),
-            });
-        }
-    }
-}
-
-fn handle_tool_calls(
-    tool_calls: &[StreamToolCall],
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    for tool_call in tool_calls {
-        if should_start_new_tool_call(current_block, tool_call) {
-            start_tool_call_block(tool_call, output, sender, current_block);
-        }
-
-        apply_tool_call_delta(tool_call, output, sender, current_block);
-    }
-}
-
-fn should_start_new_tool_call(
-    current_block: &Option<CurrentBlock>,
-    tool_call: &StreamToolCall,
-) -> bool {
-    match current_block {
-        Some(CurrentBlock::ToolCall { id, .. }) => {
-            tool_call.id.as_ref().is_some_and(|new_id| new_id != id)
-        }
-        _ => true,
-    }
-}
-
-fn start_tool_call_block(
-    tool_call: &StreamToolCall,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    finish_current_block(current_block, output, sender);
-
-    let id = tool_call.id.clone().unwrap_or_default();
-    let name = tool_call
-        .function
-        .as_ref()
-        .and_then(|f| f.name.clone())
-        .unwrap_or_default();
-
-    *current_block = Some(CurrentBlock::ToolCall {
-        id: id.clone(),
-        name: name.clone(),
-        partial_args: String::new(),
-    });
-    output.content.push(Content::tool_call(
-        id,
-        name,
-        serde_json::Value::Object(serde_json::Map::new()),
-    ));
-    sender.push(AssistantMessageEvent::ToolCallStart {
-        content_index: output.content.len() - 1,
-        partial: output.clone(),
-    });
-}
-
-fn apply_tool_call_delta(
-    tool_call: &StreamToolCall,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    let Some(CurrentBlock::ToolCall {
-        id,
-        name,
-        partial_args,
-    }) = current_block
-    else {
-        return;
-    };
-
-    if let Some(new_id) = &tool_call.id {
-        *id = new_id.clone();
-    }
-
-    if let Some(function) = &tool_call.function {
-        if let Some(new_name) = &function.name {
-            *name = new_name.clone();
-        }
-        if let Some(args) = &function.arguments {
-            partial_args.push_str(args);
-            sender.push(AssistantMessageEvent::ToolCallDelta {
-                content_index: output.content.len() - 1,
-                delta: args.clone(),
-                partial: output.clone(),
-            });
-        }
-    }
-}
-
-fn finish_current_block(
-    current_block: &mut Option<CurrentBlock>,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-) {
-    let Some(block) = current_block.take() else {
-        return;
-    };
-
-    let content_index = output.content.len().saturating_sub(1);
-
-    match block {
-        CurrentBlock::Text { text } => {
-            // Update the content in output
-            if let Some(Content::Text { inner }) = output.content.get_mut(content_index) {
-                inner.text = text.clone();
-            }
-            sender.push(AssistantMessageEvent::TextEnd {
-                content_index,
-                content: text,
-                partial: output.clone(),
-            });
-        }
-        CurrentBlock::Thinking {
-            thinking,
-            signature,
-        } => {
-            // Update the content in output
-            if let Some(Content::Thinking { inner }) = output.content.get_mut(content_index) {
-                inner.thinking = thinking.clone();
-                inner.thinking_signature = Some(signature);
-            }
-            sender.push(AssistantMessageEvent::ThinkingEnd {
-                content_index,
-                content: thinking,
-                partial: output.clone(),
-            });
-        }
-        CurrentBlock::ToolCall {
+    fn apply_tool_call_delta(&mut self, tool_call: &StreamToolCall) {
+        let Some(CurrentBlock::ToolCall {
             id,
             name,
             partial_args,
-        } => {
-            let arguments: serde_json::Value = serde_json::from_str(&partial_args)
-                .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+        }) = self.current_block
+        else {
+            return;
+        };
 
-            // Update the content in output
-            if let Some(Content::ToolCall { inner }) = output.content.get_mut(content_index) {
-                inner.id = id.clone();
-                inner.name = name.clone();
-                inner.arguments = arguments.clone();
+        if let Some(new_id) = &tool_call.id {
+            *id = new_id.clone();
+        }
+
+        if let Some(function) = &tool_call.function {
+            if let Some(new_name) = &function.name {
+                *name = new_name.clone();
             }
+            if let Some(args) = &function.arguments {
+                partial_args.push_str(args);
+                self.sender.push(AssistantMessageEvent::ToolCallDelta {
+                    content_index: self.output.content.len() - 1,
+                    delta: args.clone(),
+                    partial: self.output.clone(),
+                });
+            }
+        }
+    }
 
-            sender.push(AssistantMessageEvent::ToolCallEnd {
-                content_index,
-                tool_call: ToolCall {
-                    id,
-                    name,
-                    arguments,
-                    thought_signature: None,
-                },
-                partial: output.clone(),
-            });
+    // -- Block lifecycle --
+
+    fn finish_current_block(&mut self) {
+        let Some(block) = self.current_block.take() else {
+            return;
+        };
+
+        let content_index = self.output.content.len().saturating_sub(1);
+
+        match block {
+            CurrentBlock::Text { text } => {
+                if let Some(Content::Text { inner }) = self.output.content.get_mut(content_index) {
+                    inner.text = text.clone();
+                }
+                self.sender.push(AssistantMessageEvent::TextEnd {
+                    content_index,
+                    content: text,
+                    partial: self.output.clone(),
+                });
+            }
+            CurrentBlock::Thinking {
+                thinking,
+                source_field,
+            } => {
+                if let Some(Content::Thinking { inner }) =
+                    self.output.content.get_mut(content_index)
+                {
+                    inner.thinking = thinking.clone();
+                    inner.thinking_signature = Some(source_field);
+                }
+                self.sender.push(AssistantMessageEvent::ThinkingEnd {
+                    content_index,
+                    content: thinking,
+                    partial: self.output.clone(),
+                });
+            }
+            CurrentBlock::ToolCall {
+                id,
+                name,
+                partial_args,
+            } => {
+                let arguments: serde_json::Value = serde_json::from_str(&partial_args)
+                    .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+
+                if let Some(Content::ToolCall { inner }) =
+                    self.output.content.get_mut(content_index)
+                {
+                    inner.id = id.clone();
+                    inner.name = name.clone();
+                    inner.arguments = arguments.clone();
+                }
+
+                self.sender.push(AssistantMessageEvent::ToolCallEnd {
+                    content_index,
+                    tool_call: ToolCall {
+                        id,
+                        name,
+                        arguments,
+                        thought_signature: None,
+                    },
+                    partial: self.output.clone(),
+                });
+            }
         }
     }
 }

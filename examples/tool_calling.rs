@@ -1,10 +1,10 @@
-use alchemy::providers::openai_completions::ToolChoice;
-use alchemy::types::{
+use alchemy_llm::providers::openai_completions::ToolChoice;
+use alchemy_llm::types::{
     AssistantMessage, AssistantMessageEvent, Context, InputType, KnownProvider, Message, Model,
     ModelCost, OpenAICompletions, Provider, TextContent, Tool, ToolCall, ToolResultContent,
     ToolResultMessage, UserContent, UserMessage,
 };
-use alchemy::{stream, OpenAICompletionsOptions};
+use alchemy_llm::{stream, OpenAICompletionsOptions};
 use futures::StreamExt;
 use serde_json::json;
 

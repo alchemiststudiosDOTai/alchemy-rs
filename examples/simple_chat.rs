@@ -1,5 +1,5 @@
-use alchemy::stream;
-use alchemy::types::{
+use alchemy_llm::stream;
+use alchemy_llm::types::{
     AssistantMessageEvent, Context, InputType, KnownProvider, Message, Model, ModelCost,
     OpenAICompletions, Provider, UserContent, UserMessage,
 };
