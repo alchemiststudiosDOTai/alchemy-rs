@@ -19,7 +19,7 @@ use jsonschema::{Draft, JSONSchema};
 /// # Example
 ///
 /// ```ignore
-/// use alchemy::utils::validation::validate_tool_call;
+/// use alchemy_llm::utils::validation::validate_tool_call;
 ///
 /// let tools = vec![weather_tool];
 /// let tool_call = ToolCall { name: "get_weather".into(), .. };

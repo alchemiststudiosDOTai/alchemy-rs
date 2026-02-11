@@ -4,7 +4,6 @@ pub mod content;
 pub mod event;
 pub mod message;
 pub mod model;
-pub mod options;
 pub mod tool;
 pub mod usage;
 
@@ -20,6 +19,5 @@ pub use model::{
     AnthropicMessages, BedrockConverseStream, GoogleGenerativeAi, GoogleVertex, InputType, Model,
     OpenAICompletions, OpenAIResponses,
 };
-pub use options::{SimpleStreamOptions, StreamOptions, ThinkingLevel};
 pub use tool::Tool;
 pub use usage::{Cost, ModelCost, StopReason, Usage};

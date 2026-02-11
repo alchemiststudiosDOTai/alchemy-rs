@@ -68,7 +68,7 @@ static STATUS_CODE_PATTERN: Lazy<Regex> = Lazy::new(|| {
 /// # Example
 ///
 /// ```ignore
-/// use alchemy::utils::overflow::is_context_overflow;
+/// use alchemy_llm::utils::overflow::is_context_overflow;
 ///
 /// if is_context_overflow(&message, Some(200_000)) {
 ///     // Handle overflow - maybe summarize conversation
