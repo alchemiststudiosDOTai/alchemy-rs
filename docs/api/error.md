@@ -2,13 +2,13 @@
 summary: "Centralized error types with Result<T> alias and comprehensive error variants"
 read_when:
   - You need to handle API errors, network failures, or validation issues
-  - You want to understand what can go wrong in the Alchemy crate
+  - You want to understand what can go wrong in the alchemy_llm crate
   - You need to propagate errors using the ? operator
 ---
 
 # Error Handling
 
-Centralized error types for the Alchemy crate. All errors are represented by the `Error` enum, and `Result<T>` is a type alias for `std::result::Result<T, Error>`.
+Centralized error types for the `alchemy_llm` crate. All errors are represented by the `Error` enum, and `Result<T>` is a type alias for `std::result::Result<T, Error>`.
 
 ## Error Type
 
@@ -83,7 +83,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 ## Usage Example
 
 ```rust
-use alchemy::{Error, Result};
+use alchemy_llm::{Error, Result};
 
 fn make_request() -> Result<String> {
     // Returns Ok(String) or Err(Error)
@@ -107,14 +107,11 @@ match make_request() {
 Use the `?` operator to propagate errors:
 
 ```rust
-use alchemy::{Error, Result};
+use alchemy_llm::{Error, Result};
+use serde_json::Value;
 
-fn fetch_model(model_id: &str) -> Result<&'static AnyModel> {
-    let model = get_model(model_id)
-        .ok_or_else(|| Error::ModelNotFound {
-            provider: "unknown".to_string(),
-            model_id: model_id.to_string(),
-        })?;
-    Ok(model)
+fn parse_payload(payload: &str) -> Result<Value> {
+    let parsed = serde_json::from_str(payload)?;
+    Ok(parsed)
 }
 ```

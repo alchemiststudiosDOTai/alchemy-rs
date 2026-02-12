@@ -1,27 +1,26 @@
 ---
 summary: "Public API surface with re-exports of all crate modules and entry points"
 read_when:
-  - You want to understand what's available in the alchemy crate
+  - You want to understand what's available in the alchemy_llm crate
   - You need to find the correct import for a type or function
   - You're getting started with Alchemy and need an overview
 ---
 
 # Public API
 
-The `lib.rs` file defines the public API surface for the Alchemy crate. All publicly exported types and functions are re-exported here for convenience.
+The `src/lib.rs` file defines the public API surface for the `alchemy_llm` crate. All publicly exported types and functions are re-exported here for convenience.
 
 ## Module Structure
 
 ```
-alchemy/
-  src/
-    lib.rs       # Public API re-exports
-    error.rs     # Error types
-    providers/   # Provider implementations
-    stream/      # Streaming API
-    transform.rs # Message transformation
-    types/       # Core type definitions
-    utils/       # Utility functions
+src/
+  lib.rs       # Public API re-exports
+  error.rs     # Error types
+  providers/   # Provider implementations
+  stream/      # Streaming API
+  transform.rs # Message transformation
+  types/       # Core type definitions
+  utils/       # Utility functions
 ```
 
 ## Public Exports
@@ -79,25 +78,52 @@ pub use utils::{
 ## Quick Start
 
 ```rust
-use alchemy::{
+use alchemy_llm::{
     stream,
-    types::{Context, Message, UserContent},
+    types::{
+        AssistantMessageEvent, Context, InputType, KnownProvider, Message, Model, ModelCost,
+        OpenAICompletions, Provider, UserContent, UserMessage,
+    },
 };
+use futures::StreamExt;
 
 #[tokio::main]
-async fn main() -> alchemy::Result<()> {
-    let model = alchemy::get_model("claude-sonnet-4-20250514")
-        .ok_or("Model not found")?;
-
-    let context = Context {
-        messages: vec![Message::user("Hello, Claude!")],
-        ..Default::default()
+async fn main() -> alchemy_llm::Result<()> {
+    let model = Model::<OpenAICompletions> {
+        id: "gpt-4o-mini".to_string(),
+        name: "GPT-4o Mini".to_string(),
+        api: OpenAICompletions,
+        provider: Provider::Known(KnownProvider::OpenAI),
+        base_url: "https://api.openai.com/v1".to_string(),
+        reasoning: false,
+        input: vec![InputType::Text],
+        cost: ModelCost {
+            input: 0.0,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_write: 0.0,
+        },
+        context_window: 128_000,
+        max_tokens: 16_384,
+        headers: None,
+        compat: None,
     };
 
-    let mut stream = stream(&model, &context, &[])?;
+    let context = Context {
+        system_prompt: None,
+        messages: vec![Message::User(UserMessage {
+            content: UserContent::Text("Hello!".to_string()),
+            timestamp: 0,
+        })],
+        tools: None,
+    };
+
+    let mut stream = stream(&model, &context, None)?;
 
     while let Some(event) = stream.next().await {
-        println!("{:?}", event);
+        if let AssistantMessageEvent::TextDelta { delta, .. } = event {
+            print!("{}", delta);
+        }
     }
 
     Ok(())
@@ -107,33 +133,35 @@ async fn main() -> alchemy::Result<()> {
 ## Pattern: Streaming Completion
 
 ```rust
-use alchemy::{stream, types::*};
+use alchemy_llm::{stream, types::*};
 use futures::StreamExt;
 
-async fn chat(messages: Vec<Message>) -> Result<AssistantMessage> {
-    let model = get_model("gpt-4o")?;
-    let context = Context { messages, ..Default::default() };
-    let mut stream = stream(&model, &context, &[])?;
+async fn chat(model: &Model<OpenAICompletions>, messages: Vec<Message>) -> Result<String> {
+    let context = Context {
+        system_prompt: None,
+        messages,
+        tools: None,
+    };
+    let mut stream = stream(model, &context, None)?;
 
     let mut response = String::new();
     while let Some(event) = stream.next().await {
-        if let AssistantMessageEvent::Content(delta) = event {
+        if let AssistantMessageEvent::TextDelta { delta, .. } = event {
             response.push_str(&delta);
             print!("{}", delta);
         }
     }
 
-    Ok(AssistantMessage {
-        content: vec![Content::text(response)],
-        ..Default::default()
-    })
+    Ok(response)
 }
 ```
 
 ## Pattern: Cross-Provider Transformation
 
 ```rust
-use alchemy::{transform_messages, types::*};
+use alchemy_llm::transform_messages_simple;
+use alchemy_llm::types::{Api, KnownProvider, Message, Provider};
+use alchemy_llm::TargetModel;
 
 fn switch_provider(messages: Vec<Message>) -> Vec<Message> {
     let target = TargetModel {
@@ -149,8 +177,9 @@ fn switch_provider(messages: Vec<Message>) -> Vec<Message> {
 ## Pattern: Tool Validation
 
 ```rust
-use alchemy::{validate_tool_call, types::*};
-use serde_json::json;
+use alchemy_llm::validate_tool_call;
+use alchemy_llm::types::{Tool, ToolCall};
+use alchemy_llm::Result;
 
 fn check_tool_call(tools: &[Tool], call: &ToolCall) -> Result<()> {
     let validated_args = validate_tool_call(tools, call)?;

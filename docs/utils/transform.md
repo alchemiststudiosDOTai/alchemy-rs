@@ -10,7 +10,7 @@ read_when:
 
 Cross-provider message transformation for conversation history compatibility. Handles thinking blocks, tool call IDs, orphaned tool calls, and error filtering.
 
-**Source:** `src/transform.rs` (~775 lines with tests)
+**Source:** `src/transform.rs`
 
 ## Purpose
 
@@ -92,8 +92,8 @@ pub fn transform_messages_simple(
 ### Basic Transformation (Same Provider)
 
 ```rust
-use alchemy::transform::{transform_messages_simple, TargetModel};
-use alchemy::types::{Api, Provider, KnownProvider};
+use alchemy_llm::transform::{transform_messages_simple, TargetModel};
+use alchemy_llm::types::{Api, Provider, KnownProvider};
 
 let target = TargetModel {
     api: Api::AnthropicMessages,
@@ -107,8 +107,8 @@ let transformed = transform_messages_simple(&messages, &target);
 ### Cross-Provider with ID Normalization
 
 ```rust
-use alchemy::transform::{transform_messages, TargetModel};
-use alchemy::types::{Api, Provider, KnownProvider};
+use alchemy_llm::transform::{transform_messages, TargetModel};
+use alchemy_llm::types::{Api, AssistantMessage, KnownProvider, Provider};
 
 let target = TargetModel {
     api: Api::OpenAICompletions,
@@ -142,7 +142,7 @@ The module includes 15 comprehensive tests covering:
 Run tests with:
 
 ```bash
-cargo test --package alchemy --lib transform
+cargo test --package alchemy-llm --lib transform
 ```
 
 ## Implementation Notes
@@ -163,9 +163,9 @@ During transformation, the algorithm tracks:
 
 Signatures (`text_signature`, `thinking_signature`, `thought_signature`) are stripped when transforming to a different model. They are only preserved for exact same-model replay.
 
-## See Also
+## Related Files
 
-- [`types::Message`](../types/message.md) - Message types
-- [`types::Content`](../types/content.md) - Content block types
-- [`types::StopReason`](../types/stop_reason.md) - Stop reason enumeration
-- Phase 5 plan: `memory-bank/plan/phase-5-cross-provider-features.md`
+- `src/transform.rs` - transformation implementation and tests
+- `src/types/message.rs` - message types transformed by this module
+- `src/types/content.rs` - content block types used in transformed messages
+- `memory-bank/plan/phase-5-cross-provider-features.md` - phase planning notes

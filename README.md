@@ -4,7 +4,7 @@ A unified LLM API abstraction layer in Rust that supports 8+ providers through a
 
 ![Alchemy-rs](/assets/alchemy-rs-readme.png)
 
-**Heavily inspired by and ported from:** [pi-mono/packages/ai](https://github.com/badlogic/pi-mono/tree/main/packages/ai) by [@badlogic](https://github.com/badlogic)
+**Heavily inspired by and ported from:** [pi-mono/packages/ai](https://github.com/badlogic/pi-mono/tree/main/packages/ai)
 
 ## Supported Providers
 
@@ -29,28 +29,63 @@ A unified LLM API abstraction layer in Rust that supports 8+ providers through a
 ## Quick Start
 
 ```rust
-use alchemy::{stream, types::*};
+use alchemy_llm::stream;
+use alchemy_llm::types::{
+    AssistantMessageEvent, Context, InputType, KnownProvider, Message, Model, ModelCost,
+    OpenAICompletions, Provider, UserContent, UserMessage,
+};
 use futures::StreamExt;
 
 #[tokio::main]
-async fn main() -> alchemy::Result<()> {
-    let model = alchemy::get_model("claude-sonnet-4-20250514")
-        .ok_or("Model not found")?;
-
-    let context = Context {
-        messages: vec![Message::user("Hello, Claude!")],
-        ..Default::default()
+async fn main() -> alchemy_llm::Result<()> {
+    let model = Model::<OpenAICompletions> {
+        id: "gpt-4o-mini".to_string(),
+        name: "GPT-4o Mini".to_string(),
+        api: OpenAICompletions,
+        provider: Provider::Known(KnownProvider::OpenAI),
+        base_url: "https://api.openai.com/v1".to_string(),
+        reasoning: false,
+        input: vec![InputType::Text],
+        cost: ModelCost {
+            input: 0.0,
+            output: 0.0,
+            cache_read: 0.0,
+            cache_write: 0.0,
+        },
+        context_window: 128_000,
+        max_tokens: 16_384,
+        headers: None,
+        compat: None,
     };
 
-    let mut stream = stream(&model, &context, &[])?;
+    let context = Context {
+        messages: vec![Message::User(UserMessage {
+            content: UserContent::Text("Hello!".to_string()),
+            timestamp: 0,
+        })],
+        system_prompt: None,
+        tools: None,
+    };
+
+    let mut stream = stream(&model, &context, None)?;
 
     while let Some(event) = stream.next().await {
-        println!("{:?}", event);
+        if let AssistantMessageEvent::TextDelta { delta, .. } = event {
+            print!("{}", delta);
+        }
     }
 
     Ok(())
 }
 ```
+
+## Latest Release
+
+- Current crate version: `0.1.3`
+- Latest release notes: [CHANGELOG.md](./CHANGELOG.md#013---2026-02-12)
+- Highlights:
+  - Populate `usage.cost` from OpenAI-compatible streaming payloads
+  - Fix doctest crate paths to `alchemy_llm`
 
 ## Setup
 
@@ -118,6 +153,7 @@ cargo check --all-targets --all-features
 **Tools used:**
 - **Clippy** - Cognitive complexity warnings (threshold: 20)
 - **polydup** - Duplicate code detection (install: `cargo install polydup-cli`)
+
 ## License
 
 MIT
