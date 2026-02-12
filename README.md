@@ -81,6 +81,14 @@ async fn main() -> alchemy::Result<()> {
    cargo run --example api_lifecycle
    ```
 
+### Examples
+
+| Example | Description |
+|---------|-------------|
+| `api_lifecycle` | Full API lifecycle demonstration |
+| `simple_chat` | Basic chat with GPT-4o-mini |
+| `tool_calling` | Tool/function calling with weather API |
+
 ## Development
 
 See [AGENTS.md](./AGENTS.md) for detailed development guidelines, architecture, and quality gates.
