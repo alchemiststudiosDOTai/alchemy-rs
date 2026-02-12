@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.3] - 2026-02-12
+
+### Fixed
+- `openai_completions`: Populate `usage.cost` from OpenRouter/OpenAI-compatible streaming usage payloads (`cost` and `cost_details`)
+- `docs`: Fix doctest crate paths to `alchemy_llm` so doctests compile during `cargo test`
+
 ## [0.1.2] - 2026-02-12
 
 ### Added
