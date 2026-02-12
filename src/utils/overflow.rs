@@ -93,7 +93,7 @@ pub fn is_context_overflow(message: &AssistantMessage, context_window: Option<u3
     // Case 2: Silent overflow (z.ai style)
     if let Some(window) = context_window {
         if message.stop_reason == StopReason::Stop {
-            let input_tokens = message.usage.input + message.usage.cache_read;
+            let input_tokens = message.usage.input;
             if input_tokens > window {
                 return true;
             }
@@ -241,8 +241,8 @@ mod tests {
     fn test_silent_overflow_with_cache() {
         let mut msg = make_message(StopReason::Stop, None, 100000);
         msg.usage.cache_read = 150000;
-        // input + cache_read = 250000 > 200000
-        assert!(is_context_overflow(&msg, Some(200000)));
+        // Silent overflow uses raw input tokens only.
+        assert!(!is_context_overflow(&msg, Some(200000)));
     }
 
     #[test]

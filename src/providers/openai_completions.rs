@@ -282,25 +282,34 @@ fn process_chunk(
 }
 
 fn update_usage_from_chunk(usage: &StreamUsage, output: &mut AssistantMessage) {
-    let cached_tokens = usage
-        .prompt_tokens_details
-        .as_ref()
-        .and_then(|d| d.cached_tokens)
+    let cache_read_tokens = usage
+        .cache_read_input_tokens
+        .or_else(|| {
+            usage
+                .prompt_tokens_details
+                .as_ref()
+                .and_then(|details| details.cached_tokens)
+        })
         .unwrap_or(0);
-    let reasoning_tokens = usage
-        .completion_tokens_details
-        .as_ref()
-        .and_then(|d| d.reasoning_tokens)
+    let cache_write_tokens = usage
+        .cache_creation_input_tokens
+        .or_else(|| {
+            usage
+                .prompt_tokens_details
+                .as_ref()
+                .and_then(|details| details.cache_write_tokens)
+        })
         .unwrap_or(0);
-    let input = usage.prompt_tokens.saturating_sub(cached_tokens);
-    let output_tokens = usage.completion_tokens + reasoning_tokens;
+    let input_tokens = usage.prompt_tokens;
+    let output_tokens = usage.completion_tokens;
+    let total_tokens = usage.total_tokens.unwrap_or(input_tokens + output_tokens);
 
     output.usage = Usage {
-        input,
+        input: input_tokens,
         output: output_tokens,
-        cache_read: cached_tokens,
-        cache_write: 0,
-        total_tokens: input + output_tokens + cached_tokens,
+        cache_read: cache_read_tokens,
+        cache_write: cache_write_tokens,
+        total_tokens,
         ..Default::default()
     };
 }
@@ -936,18 +945,24 @@ struct StreamFunction {
 struct StreamUsage {
     prompt_tokens: u32,
     completion_tokens: u32,
+    total_tokens: Option<u32>,
+    cache_read_input_tokens: Option<u32>,
+    cache_creation_input_tokens: Option<u32>,
     prompt_tokens_details: Option<PromptTokensDetails>,
-    completion_tokens_details: Option<CompletionTokensDetails>,
+    #[serde(rename = "completion_tokens_details")]
+    _completion_tokens_details: Option<CompletionTokensDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 struct PromptTokensDetails {
     cached_tokens: Option<u32>,
+    cache_write_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
 struct CompletionTokensDetails {
-    reasoning_tokens: Option<u32>,
+    #[serde(rename = "reasoning_tokens")]
+    _reasoning_tokens: Option<u32>,
 }
 
 #[cfg(test)]
@@ -1024,5 +1039,83 @@ mod tests {
         assert_eq!(compat.max_tokens_field, MaxTokensField::MaxTokens);
         assert!(compat.requires_mistral_tool_ids);
         assert!(compat.requires_tool_result_name);
+    }
+
+    fn make_output_message() -> AssistantMessage {
+        AssistantMessage {
+            content: vec![],
+            api: Api::OpenAICompletions,
+            provider: Provider::Known(KnownProvider::OpenAI),
+            model: "test-model".to_string(),
+            usage: Usage::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 0,
+        }
+    }
+
+    #[test]
+    fn test_update_usage_from_chunk_uses_provider_raw_totals() {
+        let usage: StreamUsage = serde_json::from_value(serde_json::json!({
+            "prompt_tokens": 79,
+            "completion_tokens": 114,
+            "completion_tokens_details": {
+                "reasoning_tokens": 91
+            },
+            "total_tokens": 193
+        }))
+        .expect("valid usage payload");
+
+        let mut output = make_output_message();
+        update_usage_from_chunk(&usage, &mut output);
+
+        assert_eq!(output.usage.input, 79);
+        assert_eq!(output.usage.output, 114);
+        assert_eq!(output.usage.total_tokens, 193);
+    }
+
+    #[test]
+    fn test_update_usage_from_chunk_uses_provider_cache_tokens_when_present() {
+        let usage = StreamUsage {
+            prompt_tokens: 100,
+            completion_tokens: 25,
+            total_tokens: Some(125),
+            cache_read_input_tokens: Some(12),
+            cache_creation_input_tokens: Some(9),
+            prompt_tokens_details: Some(PromptTokensDetails {
+                cached_tokens: Some(7),
+                cache_write_tokens: Some(5),
+            }),
+            _completion_tokens_details: None,
+        };
+
+        let mut output = make_output_message();
+        update_usage_from_chunk(&usage, &mut output);
+
+        assert_eq!(output.usage.cache_read, 12);
+        assert_eq!(output.usage.cache_write, 9);
+    }
+
+    #[test]
+    fn test_update_usage_from_chunk_falls_back_to_prompt_details() {
+        let usage = StreamUsage {
+            prompt_tokens: 80,
+            completion_tokens: 20,
+            total_tokens: None,
+            cache_read_input_tokens: None,
+            cache_creation_input_tokens: None,
+            prompt_tokens_details: Some(PromptTokensDetails {
+                cached_tokens: Some(15),
+                cache_write_tokens: Some(4),
+            }),
+            _completion_tokens_details: None,
+        };
+
+        let mut output = make_output_message();
+        update_usage_from_chunk(&usage, &mut output);
+
+        assert_eq!(output.usage.cache_read, 15);
+        assert_eq!(output.usage.cache_write, 4);
+        assert_eq!(output.usage.total_tokens, 100);
     }
 }
