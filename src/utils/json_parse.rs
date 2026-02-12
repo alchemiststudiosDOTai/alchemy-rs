@@ -19,7 +19,7 @@ use serde_json::Value;
 /// # Example
 ///
 /// ```
-/// use alchemy::utils::json_parse::parse_streaming_json;
+/// use alchemy_llm::utils::json_parse::parse_streaming_json;
 /// use serde_json::json;
 ///
 /// let partial = r#"{"name": "test", "value": 42"#;
@@ -60,7 +60,7 @@ pub fn parse_streaming_json(s: &str) -> Value {
 /// # Example
 ///
 /// ```
-/// use alchemy::utils::json_parse::parse_streaming_json_smart;
+/// use alchemy_llm::utils::json_parse::parse_streaming_json_smart;
 /// use serde_json::json;
 ///
 /// let partial = r#"{"items": [1, 2, 3"#;

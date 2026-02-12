@@ -17,7 +17,7 @@
 /// # Example
 ///
 /// ```
-/// use alchemy::utils::sanitize::sanitize_surrogates;
+/// use alchemy_llm::utils::sanitize::sanitize_surrogates;
 ///
 /// let clean = sanitize_surrogates("Hello, world!");
 /// assert_eq!(clean, "Hello, world!");
@@ -41,7 +41,7 @@ pub fn sanitize_surrogates(s: &str) -> String {
 /// # Example
 ///
 /// ```
-/// use alchemy::utils::sanitize::sanitize_for_api;
+/// use alchemy_llm::utils::sanitize::sanitize_for_api;
 ///
 /// let sanitized = sanitize_for_api("Hello, world!");
 /// assert_eq!(sanitized, "Hello, world!");
