@@ -303,6 +303,34 @@ fn update_usage_from_chunk(usage: &StreamUsage, output: &mut AssistantMessage) {
     let input_tokens = usage.prompt_tokens;
     let output_tokens = usage.completion_tokens;
     let total_tokens = usage.total_tokens.unwrap_or(input_tokens + output_tokens);
+    let cost_input = usage
+        .cost_details
+        .as_ref()
+        .and_then(|details| details.upstream_inference_prompt_cost)
+        .unwrap_or(0.0);
+    let cost_output = usage
+        .cost_details
+        .as_ref()
+        .and_then(|details| details.upstream_inference_completions_cost)
+        .unwrap_or(0.0);
+    let cost_cache_read = 0.0;
+    let cost_cache_write = 0.0;
+
+    let has_component_cost = usage.cost_details.as_ref().is_some_and(|details| {
+        details.upstream_inference_prompt_cost.is_some()
+            || details.upstream_inference_completions_cost.is_some()
+    });
+
+    let component_total_cost =
+        has_component_cost.then_some(cost_input + cost_output + cost_cache_read + cost_cache_write);
+
+    let cost_total = usage
+        .cost_details
+        .as_ref()
+        .and_then(|details| details.upstream_inference_cost)
+        .or(usage.cost)
+        .or(component_total_cost)
+        .unwrap_or(0.0);
 
     output.usage = Usage {
         input: input_tokens,
@@ -310,7 +338,13 @@ fn update_usage_from_chunk(usage: &StreamUsage, output: &mut AssistantMessage) {
         cache_read: cache_read_tokens,
         cache_write: cache_write_tokens,
         total_tokens,
-        ..Default::default()
+        cost: crate::types::Cost {
+            input: cost_input,
+            output: cost_output,
+            cache_read: cost_cache_read,
+            cache_write: cost_cache_write,
+            total: cost_total,
+        },
     };
 }
 
@@ -948,9 +982,18 @@ struct StreamUsage {
     total_tokens: Option<u32>,
     cache_read_input_tokens: Option<u32>,
     cache_creation_input_tokens: Option<u32>,
+    cost: Option<f64>,
+    cost_details: Option<StreamCostDetails>,
     prompt_tokens_details: Option<PromptTokensDetails>,
     #[serde(rename = "completion_tokens_details")]
     _completion_tokens_details: Option<CompletionTokensDetails>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamCostDetails {
+    upstream_inference_prompt_cost: Option<f64>,
+    upstream_inference_completions_cost: Option<f64>,
+    upstream_inference_cost: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1082,6 +1125,8 @@ mod tests {
             total_tokens: Some(125),
             cache_read_input_tokens: Some(12),
             cache_creation_input_tokens: Some(9),
+            cost: None,
+            cost_details: None,
             prompt_tokens_details: Some(PromptTokensDetails {
                 cached_tokens: Some(7),
                 cache_write_tokens: Some(5),
@@ -1104,6 +1149,8 @@ mod tests {
             total_tokens: None,
             cache_read_input_tokens: None,
             cache_creation_input_tokens: None,
+            cost: None,
+            cost_details: None,
             prompt_tokens_details: Some(PromptTokensDetails {
                 cached_tokens: Some(15),
                 cache_write_tokens: Some(4),
@@ -1117,5 +1164,86 @@ mod tests {
         assert_eq!(output.usage.cache_read, 15);
         assert_eq!(output.usage.cache_write, 4);
         assert_eq!(output.usage.total_tokens, 100);
+    }
+
+    #[test]
+    fn test_update_usage_from_chunk_maps_cost_details() {
+        let usage: StreamUsage = serde_json::from_value(serde_json::json!({
+            "prompt_tokens": 16,
+            "completion_tokens": 4,
+            "total_tokens": 20,
+            "cost": 0.0001782,
+            "cost_details": {
+                "upstream_inference_prompt_cost": 0.00008,
+                "upstream_inference_completions_cost": 0.0001,
+                "upstream_inference_cost": 0.00018
+            }
+        }))
+        .expect("valid usage payload");
+
+        let mut output = make_output_message();
+        update_usage_from_chunk(&usage, &mut output);
+
+        assert_eq!(output.usage.cost.input, 0.00008);
+        assert_eq!(output.usage.cost.output, 0.0001);
+        assert_eq!(output.usage.cost.total, 0.00018);
+    }
+
+    #[test]
+    fn test_update_usage_from_chunk_uses_top_level_cost_when_details_missing() {
+        let usage: StreamUsage = serde_json::from_value(serde_json::json!({
+            "prompt_tokens": 16,
+            "completion_tokens": 4,
+            "total_tokens": 20,
+            "cost": 0.0001782
+        }))
+        .expect("valid usage payload");
+
+        let mut output = make_output_message();
+        update_usage_from_chunk(&usage, &mut output);
+
+        assert_eq!(output.usage.cost.input, 0.0);
+        assert_eq!(output.usage.cost.output, 0.0);
+        assert_eq!(output.usage.cost.total, 0.0001782);
+    }
+
+    #[test]
+    fn test_update_usage_from_chunk_falls_back_to_component_sum_when_total_missing() {
+        let usage: StreamUsage = serde_json::from_value(serde_json::json!({
+            "prompt_tokens": 16,
+            "completion_tokens": 4,
+            "total_tokens": 20,
+            "cost_details": {
+                "upstream_inference_prompt_cost": 0.00008,
+                "upstream_inference_completions_cost": 0.0001
+            }
+        }))
+        .expect("valid usage payload");
+
+        let mut output = make_output_message();
+        update_usage_from_chunk(&usage, &mut output);
+
+        assert_eq!(output.usage.cost.input, 0.00008);
+        assert_eq!(output.usage.cost.output, 0.0001);
+        assert_eq!(output.usage.cost.total, 0.00018);
+    }
+
+    #[test]
+    fn test_update_usage_from_chunk_defaults_cost_to_zero_when_missing() {
+        let usage: StreamUsage = serde_json::from_value(serde_json::json!({
+            "prompt_tokens": 16,
+            "completion_tokens": 4,
+            "total_tokens": 20
+        }))
+        .expect("valid usage payload");
+
+        let mut output = make_output_message();
+        update_usage_from_chunk(&usage, &mut output);
+
+        assert_eq!(output.usage.cost.input, 0.0);
+        assert_eq!(output.usage.cost.output, 0.0);
+        assert_eq!(output.usage.cost.cache_read, 0.0);
+        assert_eq!(output.usage.cost.cache_write, 0.0);
+        assert_eq!(output.usage.cost.total, 0.0);
     }
 }
