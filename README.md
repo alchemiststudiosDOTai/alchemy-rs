@@ -1,5 +1,9 @@
 # Alchemy
 
+[![Crates.io](https://img.shields.io/crates/v/alchemy-llm.svg)](https://crates.io/crates/alchemy-llm)
+[![Documentation](https://docs.rs/alchemy-llm/badge.svg)](https://docs.rs/alchemy-llm)
+[![License: MIT](https://img.shields.io/crates/l/alchemy-llm.svg)](https://opensource.org/licenses/MIT)
+
 A unified LLM API abstraction layer in Rust that supports 8+ providers through a consistent interface.
 
 > **Warning:** This project is in early development (v0.1.x). APIs may change without notice. Not recommended for production use yet.
@@ -27,6 +31,19 @@ A unified LLM API abstraction layer in Rust that supports 8+ providers through a
 - **Provider-agnostic** - Switch providers without code changes
 - **Tool calling** - Function/tool support across providers
 - **Message transformation** - Cross-provider message compatibility
+
+## Installation
+
+```bash
+cargo add alchemy-llm
+```
+
+Or add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+alchemy-llm = "0.1"
+```
 
 ## Quick Start
 
@@ -83,8 +100,10 @@ async fn main() -> alchemy_llm::Result<()> {
 
 ## Latest Release
 
-- Current crate version: `0.1.3`
-- Latest release notes: [CHANGELOG.md](./CHANGELOG.md#013---2026-02-12)
+- **Crate:** [alchemy-llm on crates.io](https://crates.io/crates/alchemy-llm)
+- **Docs:** [docs.rs/alchemy-llm](https://docs.rs/alchemy-llm)
+- Current version: `0.1.3`
+- Release notes: [CHANGELOG.md](./CHANGELOG.md#013---2026-02-12)
 - Highlights:
   - Populate `usage.cost` from OpenAI-compatible streaming payloads
   - Fix doctest crate paths to `alchemy_llm`
