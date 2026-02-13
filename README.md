@@ -2,6 +2,8 @@
 
 A unified LLM API abstraction layer in Rust that supports 8+ providers through a consistent interface.
 
+> **Warning:** This project is in early development (v0.1.x). APIs may change without notice. Not recommended for production use yet.
+
 ![Alchemy-rs](/assets/alchemy-rs-readme.png)
 
 **Heavily inspired by and ported from:** [pi-mono/packages/ai](https://github.com/badlogic/pi-mono/tree/main/packages/ai)
