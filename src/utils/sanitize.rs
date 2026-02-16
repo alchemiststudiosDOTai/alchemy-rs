@@ -46,9 +46,7 @@ pub fn sanitize_surrogates(s: &str) -> String {
 /// let sanitized = sanitize_for_api("Hello, world!");
 /// assert_eq!(sanitized, "Hello, world!");
 /// ```
-pub fn sanitize_for_api(s: &str) -> String {
-    sanitize_surrogates(s)
-}
+pub use sanitize_surrogates as sanitize_for_api;
 
 #[cfg(test)]
 mod tests {
