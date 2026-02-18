@@ -20,10 +20,21 @@ impl SystemPromptRole {
     }
 }
 
+const OPEN_THINK_TAG: &str = "<think>";
+const CLOSE_THINK_TAG: &str = "</think>";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AssistantThinkingMode {
+    Omit,
+    PlainText,
+    ThinkTags,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OpenAiLikeMessageOptions {
     pub system_role: SystemPromptRole,
     pub requires_tool_result_name: bool,
+    pub assistant_thinking_mode: AssistantThinkingMode,
 }
 
 pub(crate) fn convert_messages<TApi: ApiType>(
@@ -39,7 +50,7 @@ pub(crate) fn convert_messages<TApi: ApiType>(
         match message {
             Message::User(user) => messages.push(convert_user_message(model, user)),
             Message::Assistant(assistant) => {
-                if let Some(converted) = convert_assistant_message(assistant) {
+                if let Some(converted) = convert_assistant_message(assistant, options) {
                     messages.push(converted);
                 }
             }
@@ -119,12 +130,13 @@ fn user_content_to_json<TApi: ApiType>(
 
 fn convert_assistant_message(
     assistant: &crate::types::AssistantMessage,
+    options: &OpenAiLikeMessageOptions,
 ) -> Option<serde_json::Value> {
     let mut message = json!({
         "role": "assistant",
     });
 
-    let text_parts = assistant_text_parts(assistant);
+    let text_parts = assistant_text_parts(assistant, options.assistant_thinking_mode);
     if !text_parts.is_empty() {
         message["content"] = json!(text_parts
             .iter()
@@ -144,15 +156,31 @@ fn convert_assistant_message(
     Some(message)
 }
 
-fn assistant_text_parts(assistant: &crate::types::AssistantMessage) -> Vec<String> {
+fn assistant_text_parts(
+    assistant: &crate::types::AssistantMessage,
+    thinking_mode: AssistantThinkingMode,
+) -> Vec<String> {
     assistant
         .content
         .iter()
         .filter_map(|content| match content {
             Content::Text { inner } if !inner.text.is_empty() => Some(inner.text.clone()),
+            Content::Thinking { inner } if !inner.thinking.is_empty() => {
+                map_thinking_content(&inner.thinking, thinking_mode)
+            }
             _ => None,
         })
         .collect()
+}
+
+fn map_thinking_content(thinking: &str, mode: AssistantThinkingMode) -> Option<String> {
+    match mode {
+        AssistantThinkingMode::Omit => None,
+        AssistantThinkingMode::PlainText => Some(thinking.to_string()),
+        AssistantThinkingMode::ThinkTags => {
+            Some(format!("{OPEN_THINK_TAG}{thinking}{CLOSE_THINK_TAG}"))
+        }
+    }
 }
 
 fn assistant_tool_calls(assistant: &crate::types::AssistantMessage) -> Vec<serde_json::Value> {
@@ -249,9 +277,9 @@ mod tests {
         }
     }
 
-    fn make_assistant_message() -> AssistantMessage {
+    fn make_assistant_message(content: Vec<Content>) -> AssistantMessage {
         AssistantMessage {
-            content: vec![Content::text("hello")],
+            content,
             api: Api::OpenAICompletions,
             provider: Provider::Known(KnownProvider::OpenAI),
             model: "test-model".to_string(),
@@ -269,6 +297,28 @@ mod tests {
         }
     }
 
+    fn convert_assistant_with_thinking(mode: AssistantThinkingMode) -> serde_json::Value {
+        let model = make_model(vec![InputType::Text]);
+        let context = Context {
+            system_prompt: None,
+            messages: vec![Message::Assistant(make_assistant_message(vec![
+                Content::thinking("internal"),
+                Content::text("answer"),
+            ]))],
+            tools: None,
+        };
+
+        convert_messages(
+            &model,
+            &context,
+            &OpenAiLikeMessageOptions {
+                system_role: SystemPromptRole::System,
+                requires_tool_result_name: false,
+                assistant_thinking_mode: mode,
+            },
+        )
+    }
+
     #[test]
     fn convert_messages_uses_system_role_option() {
         let model = make_model(vec![InputType::Text]);
@@ -284,6 +334,7 @@ mod tests {
             &OpenAiLikeMessageOptions {
                 system_role: SystemPromptRole::Developer,
                 requires_tool_result_name: false,
+                assistant_thinking_mode: AssistantThinkingMode::Omit,
             },
         );
 
@@ -314,6 +365,7 @@ mod tests {
             &OpenAiLikeMessageOptions {
                 system_role: SystemPromptRole::System,
                 requires_tool_result_name: false,
+                assistant_thinking_mode: AssistantThinkingMode::Omit,
             },
         );
 
@@ -325,7 +377,9 @@ mod tests {
         let model = make_model(vec![InputType::Text]);
         let context = Context {
             system_prompt: None,
-            messages: vec![Message::Assistant(make_assistant_message())],
+            messages: vec![Message::Assistant(make_assistant_message(vec![
+                Content::text("hello"),
+            ]))],
             tools: None,
         };
 
@@ -335,10 +389,51 @@ mod tests {
             &OpenAiLikeMessageOptions {
                 system_role: SystemPromptRole::System,
                 requires_tool_result_name: false,
+                assistant_thinking_mode: AssistantThinkingMode::Omit,
             },
         );
 
         assert_eq!(params[0]["role"], "assistant");
         assert_eq!(params[0]["content"][0]["text"], "hello");
+    }
+
+    #[test]
+    fn convert_messages_omits_assistant_thinking_in_omit_mode() {
+        let model = make_model(vec![InputType::Text]);
+        let context = Context {
+            system_prompt: None,
+            messages: vec![Message::Assistant(make_assistant_message(vec![
+                Content::thinking("internal"),
+            ]))],
+            tools: None,
+        };
+
+        let params = convert_messages(
+            &model,
+            &context,
+            &OpenAiLikeMessageOptions {
+                system_role: SystemPromptRole::System,
+                requires_tool_result_name: false,
+                assistant_thinking_mode: AssistantThinkingMode::Omit,
+            },
+        );
+
+        assert_eq!(params, serde_json::json!([]));
+    }
+
+    #[test]
+    fn convert_messages_includes_assistant_thinking_as_plain_text() {
+        let params = convert_assistant_with_thinking(AssistantThinkingMode::PlainText);
+
+        assert_eq!(params[0]["content"][0]["text"], "internal");
+        assert_eq!(params[0]["content"][1]["text"], "answer");
+    }
+
+    #[test]
+    fn convert_messages_wraps_assistant_thinking_in_think_tags() {
+        let params = convert_assistant_with_thinking(AssistantThinkingMode::ThinkTags);
+
+        assert_eq!(params[0]["content"][0]["text"], "<think>internal</think>");
+        assert_eq!(params[0]["content"][1]["text"], "answer");
     }
 }

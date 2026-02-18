@@ -7,8 +7,9 @@ use super::shared::{
     build_http_client, convert_messages, convert_tools, finish_current_block,
     handle_reasoning_delta, handle_text_delta, handle_tool_calls, initialize_output,
     map_stop_reason, process_sse_stream, push_stream_done, push_stream_error,
-    send_streaming_request, update_usage_from_chunk, CurrentBlock, OpenAiLikeMessageOptions,
-    OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta, SystemPromptRole,
+    send_streaming_request, update_usage_from_chunk, AssistantThinkingMode, CurrentBlock,
+    OpenAiLikeMessageOptions, OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta,
+    SystemPromptRole,
 };
 use crate::stream::{AssistantMessageEventStream, EventStreamSender};
 use crate::types::{
@@ -245,9 +246,16 @@ fn build_params(
         SystemPromptRole::System
     };
 
+    let assistant_thinking_mode = if compat.requires_thinking_as_text {
+        AssistantThinkingMode::PlainText
+    } else {
+        AssistantThinkingMode::Omit
+    };
+
     let message_options = OpenAiLikeMessageOptions {
         system_role,
         requires_tool_result_name: compat.requires_tool_result_name,
+        assistant_thinking_mode,
     };
 
     params["messages"] = convert_messages(model, context, &message_options);

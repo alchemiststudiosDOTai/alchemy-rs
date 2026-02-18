@@ -6,8 +6,9 @@ use super::shared::{
     build_http_client, convert_messages, convert_tools, finish_current_block,
     handle_reasoning_delta, handle_text_delta, handle_tool_calls, initialize_output,
     map_stop_reason, process_sse_stream, push_stream_done, push_stream_error,
-    send_streaming_request, update_usage_from_chunk, CurrentBlock, OpenAiLikeMessageOptions,
-    OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta, SystemPromptRole,
+    send_streaming_request, update_usage_from_chunk, AssistantThinkingMode, CurrentBlock,
+    OpenAiLikeMessageOptions, OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta,
+    SystemPromptRole,
 };
 use crate::stream::{AssistantMessageEventStream, EventStreamSender};
 use crate::types::{
@@ -23,6 +24,8 @@ const REASONING_CONTENT_SIGNATURE: &str = "reasoning_content";
 const REASONING_SIGNATURE: &str = "reasoning";
 const REASONING_TEXT_SIGNATURE: &str = "reasoning_text";
 const THINK_TAG_SIGNATURE: &str = "think_tag";
+const MINIMAX_MIN_TEMPERATURE: f64 = f64::MIN_POSITIVE;
+const MINIMAX_MAX_TEMPERATURE: f64 = 1.0;
 
 /// Stream completions from MiniMax chat/completions API.
 pub fn stream_minimax_completions(
@@ -110,6 +113,7 @@ fn build_params(
     let message_options = OpenAiLikeMessageOptions {
         system_role: SystemPromptRole::System,
         requires_tool_result_name: false,
+        assistant_thinking_mode: AssistantThinkingMode::ThinkTags,
     };
 
     let mut params = json!({
@@ -131,7 +135,7 @@ fn build_params(
     }
 
     if let Some(temperature) = options.temperature {
-        params["temperature"] = json!(temperature);
+        params["temperature"] = json!(clamp_temperature(temperature));
     }
 
     if let Some(tools) = &context.tools {
@@ -143,6 +147,10 @@ fn build_params(
     }
 
     params
+}
+
+fn clamp_temperature(temperature: f64) -> f64 {
+    temperature.clamp(MINIMAX_MIN_TEMPERATURE, MINIMAX_MAX_TEMPERATURE)
 }
 
 fn process_chunk(
@@ -335,8 +343,8 @@ struct ReasoningDetail {
 mod tests {
     use super::*;
     use crate::types::{
-        AssistantMessageEvent, InputType, KnownProvider, ModelCost, Provider, StopReason, Usage,
-        UserContent, UserMessage,
+        AssistantMessageEvent, Content, InputType, KnownProvider, Message, ModelCost, Provider,
+        StopReason, Usage, UserContent, UserMessage,
     };
     use futures::executor::block_on;
     use futures::StreamExt;
@@ -434,7 +442,7 @@ mod tests {
         assert_eq!(params["stream_options"][STREAM_INCLUDE_USAGE_FIELD], true);
         assert_eq!(params[REASONING_SPLIT_FIELD], true);
         assert_eq!(params[MAX_TOKENS_FIELD], 512);
-        assert_eq!(params["temperature"], 1.2);
+        assert_eq!(params["temperature"], MINIMAX_MAX_TEMPERATURE);
         assert_eq!(params["messages"][0]["role"], "system");
         assert_eq!(params["messages"][0]["content"], "You are concise");
         assert!(params.get("n").is_none());
@@ -450,6 +458,49 @@ mod tests {
         let params = build_params(&model, &context, &options);
 
         assert!(params.get(REASONING_SPLIT_FIELD).is_none());
+    }
+
+    #[test]
+    fn build_params_clamps_temperature_to_positive_lower_bound() {
+        let model = make_model(true);
+        let context = make_context();
+        let options = OpenAICompletionsOptions {
+            temperature: Some(0.0),
+            ..OpenAICompletionsOptions::default()
+        };
+
+        let params = build_params(&model, &context, &options);
+
+        assert_eq!(params["temperature"], MINIMAX_MIN_TEMPERATURE);
+    }
+
+    #[test]
+    fn build_params_wraps_assistant_thinking_with_think_tags_for_replay() {
+        let model = make_model(true);
+        let assistant = AssistantMessage {
+            content: vec![Content::thinking("step"), Content::text("answer")],
+            api: Api::MinimaxCompletions,
+            provider: Provider::Known(KnownProvider::Minimax),
+            model: model.id.clone(),
+            usage: Usage::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 0,
+        };
+        let context = Context {
+            system_prompt: None,
+            messages: vec![Message::Assistant(assistant)],
+            tools: None,
+        };
+
+        let params = build_params(&model, &context, &OpenAICompletionsOptions::default());
+
+        assert_eq!(params["messages"][0]["role"], "assistant");
+        assert_eq!(
+            params["messages"][0]["content"][0]["text"],
+            "<think>step</think>"
+        );
+        assert_eq!(params["messages"][0]["content"][1]["text"], "answer");
     }
 
     #[test]

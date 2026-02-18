@@ -8,7 +8,8 @@ mod timestamp;
 
 pub(crate) use http::build_http_client;
 pub(crate) use openai_like_messages::{
-    convert_messages, convert_tools, OpenAiLikeMessageOptions, SystemPromptRole,
+    convert_messages, convert_tools, AssistantThinkingMode, OpenAiLikeMessageOptions,
+    SystemPromptRole,
 };
 pub(crate) use openai_like_runtime::{
     initialize_output, process_sse_stream, push_stream_done, push_stream_error,
