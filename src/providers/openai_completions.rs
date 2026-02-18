@@ -1,15 +1,19 @@
 use std::collections::HashMap;
 
-use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::shared::{build_http_client, unix_timestamp_millis};
+use super::shared::{
+    build_http_client, convert_messages, convert_tools, finish_current_block,
+    handle_reasoning_delta, handle_text_delta, handle_tool_calls, initialize_output,
+    map_stop_reason, process_sse_stream, push_stream_done, push_stream_error,
+    send_streaming_request, update_usage_from_chunk, CurrentBlock, OpenAiLikeMessageOptions,
+    OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta, SystemPromptRole,
+};
 use crate::stream::{AssistantMessageEventStream, EventStreamSender};
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEvent, Content, Context, KnownProvider, MaxTokensField,
-    Model, OpenAICompletions, OpenAICompletionsCompat, Provider, StopReason, StopReasonError,
-    StopReasonSuccess, ThinkingFormat, Tool, ToolCall, Usage,
+    Api, AssistantMessage, AssistantMessageEvent, Context, KnownProvider, MaxTokensField, Model,
+    OpenAICompletions, OpenAICompletionsCompat, Provider, ThinkingFormat,
 };
 
 /// Options for OpenAI completions streaming.
@@ -101,7 +105,6 @@ pub fn stream_openai_completions(
 ) -> AssistantMessageEventStream {
     let (stream, sender) = AssistantMessageEventStream::new();
 
-    // Clone what we need for the async task
     let model = model.clone();
     let context = context.clone();
 
@@ -118,26 +121,15 @@ async fn run_stream(
     options: OpenAICompletionsOptions,
     mut sender: EventStreamSender,
 ) {
-    let mut output = AssistantMessage {
-        content: vec![],
-        api: Api::OpenAICompletions,
-        provider: model.provider.clone(),
-        model: model.id.clone(),
-        usage: Usage::default(),
-        stop_reason: StopReason::Stop,
-        error_message: None,
-        timestamp: unix_timestamp_millis(),
-    };
+    let mut output = initialize_output(
+        Api::OpenAICompletions,
+        model.provider.clone(),
+        model.id.clone(),
+    );
 
-    let result = run_stream_inner(&model, &context, &options, &mut output, &mut sender).await;
-
-    if let Err(e) = result {
-        output.stop_reason = StopReason::Error;
-        output.error_message = Some(e.to_string());
-        sender.push(AssistantMessageEvent::Error {
-            reason: StopReasonError::Error,
-            error: output,
-        });
+    if let Err(error) = run_stream_inner(&model, &context, &options, &mut output, &mut sender).await
+    {
+        push_stream_error(&mut output, &mut sender, error);
     }
 }
 
@@ -157,94 +149,28 @@ async fn run_stream_inner(
     let client = build_http_client(api_key, model.headers.as_ref(), options.headers.as_ref())?;
     let params = build_params(model, context, options, &compat);
 
-    let response = client.post(&model.base_url).json(&params).send().await?;
-
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        let body = response.text().await.unwrap_or_default();
-        return Err(crate::Error::ApiError {
-            status_code: status,
-            message: body,
-        });
-    }
+    let response = send_streaming_request(&client, &model.base_url, &params).await?;
 
     sender.push(AssistantMessageEvent::Start {
         partial: output.clone(),
     });
 
-    // Track current content block state
     let mut current_block: Option<CurrentBlock> = None;
 
-    // Process SSE stream
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
+    process_sse_stream::<StreamChunk, _>(response, |chunk| {
+        process_chunk(&chunk, output, sender, &mut current_block);
+    })
+    .await?;
 
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-        // Process complete SSE lines
-        while let Some(line_end) = buffer.find('\n') {
-            let line = buffer[..line_end].trim().to_string();
-            buffer = buffer[line_end + 1..].to_string();
-
-            if line.is_empty() || line.starts_with(':') {
-                continue;
-            }
-
-            if let Some(data) = line.strip_prefix("data: ") {
-                if data == "[DONE]" {
-                    break;
-                }
-
-                if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
-                    process_chunk(&chunk, output, sender, &mut current_block);
-                }
-            }
-        }
-    }
-
-    // Finish any pending block
     finish_current_block(&mut current_block, output, sender);
-
-    // Send done event
-    sender.push(AssistantMessageEvent::Done {
-        reason: match output.stop_reason {
-            StopReason::Stop => StopReasonSuccess::Stop,
-            StopReason::Length => StopReasonSuccess::Length,
-            StopReason::ToolUse => StopReasonSuccess::ToolUse,
-            _ => StopReasonSuccess::Stop,
-        },
-        message: output.clone(),
-    });
+    push_stream_done(output, sender);
 
     Ok(())
-}
-
-#[derive(Debug)]
-enum CurrentBlock {
-    Text {
-        text: String,
-    },
-    Thinking {
-        thinking: String,
-        signature: String,
-    },
-    ToolCall {
-        id: String,
-        name: String,
-        partial_args: String,
-    },
 }
 
 const REASONING_CONTENT_FIELD: &str = "reasoning_content";
 const REASONING_FIELD: &str = "reasoning";
 const REASONING_TEXT_FIELD: &str = "reasoning_text";
-
-struct ReasoningDelta<'a> {
-    text: &'a str,
-    signature: &'static str,
-}
 
 fn process_chunk(
     chunk: &StreamChunk,
@@ -281,73 +207,6 @@ fn process_chunk(
     }
 }
 
-fn update_usage_from_chunk(usage: &StreamUsage, output: &mut AssistantMessage) {
-    let cache_read_tokens = usage
-        .cache_read_input_tokens
-        .or_else(|| {
-            usage
-                .prompt_tokens_details
-                .as_ref()
-                .and_then(|details| details.cached_tokens)
-        })
-        .unwrap_or(0);
-    let cache_write_tokens = usage
-        .cache_creation_input_tokens
-        .or_else(|| {
-            usage
-                .prompt_tokens_details
-                .as_ref()
-                .and_then(|details| details.cache_write_tokens)
-        })
-        .unwrap_or(0);
-    let input_tokens = usage.prompt_tokens;
-    let output_tokens = usage.completion_tokens;
-    let total_tokens = usage.total_tokens.unwrap_or(input_tokens + output_tokens);
-    let cost_input = usage
-        .cost_details
-        .as_ref()
-        .and_then(|details| details.upstream_inference_prompt_cost)
-        .unwrap_or(0.0);
-    let cost_output = usage
-        .cost_details
-        .as_ref()
-        .and_then(|details| details.upstream_inference_completions_cost)
-        .unwrap_or(0.0);
-    let cost_cache_read = 0.0;
-    let cost_cache_write = 0.0;
-
-    let has_component_cost = usage.cost_details.as_ref().is_some_and(|details| {
-        details.upstream_inference_prompt_cost.is_some()
-            || details.upstream_inference_completions_cost.is_some()
-    });
-
-    let component_total_cost =
-        has_component_cost.then_some(cost_input + cost_output + cost_cache_read + cost_cache_write);
-
-    let cost_total = usage
-        .cost_details
-        .as_ref()
-        .and_then(|details| details.upstream_inference_cost)
-        .or(usage.cost)
-        .or(component_total_cost)
-        .unwrap_or(0.0);
-
-    output.usage = Usage {
-        input: input_tokens,
-        output: output_tokens,
-        cache_read: cache_read_tokens,
-        cache_write: cache_write_tokens,
-        total_tokens,
-        cost: crate::types::Cost {
-            input: cost_input,
-            output: cost_output,
-            cache_read: cost_cache_read,
-            cache_write: cost_cache_write,
-            total: cost_total,
-        },
-    };
-}
-
 fn extract_reasoning(delta: &StreamDelta) -> Option<ReasoningDelta<'_>> {
     if let Some(text) = delta.reasoning_content.as_deref() {
         return Some(ReasoningDelta {
@@ -369,254 +228,6 @@ fn extract_reasoning(delta: &StreamDelta) -> Option<ReasoningDelta<'_>> {
     })
 }
 
-fn handle_text_delta(
-    content: &str,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    if content.is_empty() {
-        return;
-    }
-
-    match current_block {
-        Some(CurrentBlock::Text { text }) => {
-            text.push_str(content);
-            sender.push(AssistantMessageEvent::TextDelta {
-                content_index: output.content.len().saturating_sub(1),
-                delta: content.to_string(),
-                partial: output.clone(),
-            });
-        }
-        _ => {
-            finish_current_block(current_block, output, sender);
-            let text = content.to_string();
-            *current_block = Some(CurrentBlock::Text { text: text.clone() });
-            output.content.push(Content::text(""));
-            let content_index = output.content.len() - 1;
-            sender.push(AssistantMessageEvent::TextStart {
-                content_index,
-                partial: output.clone(),
-            });
-            sender.push(AssistantMessageEvent::TextDelta {
-                content_index,
-                delta: text,
-                partial: output.clone(),
-            });
-        }
-    }
-}
-
-fn handle_reasoning_delta(
-    reasoning: ReasoningDelta<'_>,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    if reasoning.text.is_empty() {
-        return;
-    }
-
-    match current_block {
-        Some(CurrentBlock::Thinking { thinking, .. }) => {
-            thinking.push_str(reasoning.text);
-            sender.push(AssistantMessageEvent::ThinkingDelta {
-                content_index: output.content.len().saturating_sub(1),
-                delta: reasoning.text.to_string(),
-                partial: output.clone(),
-            });
-        }
-        _ => {
-            finish_current_block(current_block, output, sender);
-            let thinking = reasoning.text.to_string();
-            *current_block = Some(CurrentBlock::Thinking {
-                thinking: thinking.clone(),
-                signature: reasoning.signature.to_string(),
-            });
-            output.content.push(Content::thinking(""));
-            let content_index = output.content.len() - 1;
-            sender.push(AssistantMessageEvent::ThinkingStart {
-                content_index,
-                partial: output.clone(),
-            });
-            sender.push(AssistantMessageEvent::ThinkingDelta {
-                content_index,
-                delta: thinking,
-                partial: output.clone(),
-            });
-        }
-    }
-}
-
-fn handle_tool_calls(
-    tool_calls: &[StreamToolCall],
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    for tool_call in tool_calls {
-        if should_start_new_tool_call(current_block, tool_call) {
-            start_tool_call_block(tool_call, output, sender, current_block);
-        }
-
-        apply_tool_call_delta(tool_call, output, sender, current_block);
-    }
-}
-
-fn should_start_new_tool_call(
-    current_block: &Option<CurrentBlock>,
-    tool_call: &StreamToolCall,
-) -> bool {
-    match current_block {
-        Some(CurrentBlock::ToolCall { id, .. }) => {
-            tool_call.id.as_ref().is_some_and(|new_id| new_id != id)
-        }
-        _ => true,
-    }
-}
-
-fn start_tool_call_block(
-    tool_call: &StreamToolCall,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    finish_current_block(current_block, output, sender);
-
-    let id = tool_call.id.clone().unwrap_or_default();
-    let name = tool_call
-        .function
-        .as_ref()
-        .and_then(|f| f.name.clone())
-        .unwrap_or_default();
-
-    *current_block = Some(CurrentBlock::ToolCall {
-        id: id.clone(),
-        name: name.clone(),
-        partial_args: String::new(),
-    });
-    output.content.push(Content::tool_call(
-        id,
-        name,
-        serde_json::Value::Object(serde_json::Map::new()),
-    ));
-    sender.push(AssistantMessageEvent::ToolCallStart {
-        content_index: output.content.len() - 1,
-        partial: output.clone(),
-    });
-}
-
-fn apply_tool_call_delta(
-    tool_call: &StreamToolCall,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    current_block: &mut Option<CurrentBlock>,
-) {
-    let Some(CurrentBlock::ToolCall {
-        id,
-        name,
-        partial_args,
-    }) = current_block
-    else {
-        return;
-    };
-
-    if let Some(new_id) = &tool_call.id {
-        *id = new_id.clone();
-    }
-
-    if let Some(function) = &tool_call.function {
-        if let Some(new_name) = &function.name {
-            *name = new_name.clone();
-        }
-        if let Some(args) = &function.arguments {
-            partial_args.push_str(args);
-            sender.push(AssistantMessageEvent::ToolCallDelta {
-                content_index: output.content.len() - 1,
-                delta: args.clone(),
-                partial: output.clone(),
-            });
-        }
-    }
-}
-
-fn finish_current_block(
-    current_block: &mut Option<CurrentBlock>,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-) {
-    let Some(block) = current_block.take() else {
-        return;
-    };
-
-    let content_index = output.content.len().saturating_sub(1);
-
-    match block {
-        CurrentBlock::Text { text } => {
-            // Update the content in output
-            if let Some(Content::Text { inner }) = output.content.get_mut(content_index) {
-                inner.text = text.clone();
-            }
-            sender.push(AssistantMessageEvent::TextEnd {
-                content_index,
-                content: text,
-                partial: output.clone(),
-            });
-        }
-        CurrentBlock::Thinking {
-            thinking,
-            signature,
-        } => {
-            // Update the content in output
-            if let Some(Content::Thinking { inner }) = output.content.get_mut(content_index) {
-                inner.thinking = thinking.clone();
-                inner.thinking_signature = Some(signature);
-            }
-            sender.push(AssistantMessageEvent::ThinkingEnd {
-                content_index,
-                content: thinking,
-                partial: output.clone(),
-            });
-        }
-        CurrentBlock::ToolCall {
-            id,
-            name,
-            partial_args,
-        } => {
-            let arguments: serde_json::Value = serde_json::from_str(&partial_args)
-                .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
-
-            // Update the content in output
-            if let Some(Content::ToolCall { inner }) = output.content.get_mut(content_index) {
-                inner.id = id.clone();
-                inner.name = name.clone();
-                inner.arguments = arguments.clone();
-            }
-
-            sender.push(AssistantMessageEvent::ToolCallEnd {
-                content_index,
-                tool_call: ToolCall {
-                    id,
-                    name,
-                    arguments,
-                    thought_signature: None,
-                },
-                partial: output.clone(),
-            });
-        }
-    }
-}
-
-fn map_stop_reason(reason: &str) -> StopReason {
-    match reason {
-        "stop" => StopReason::Stop,
-        "length" => StopReason::Length,
-        "function_call" | "tool_calls" => StopReason::ToolUse,
-        "content_filter" => StopReason::Error,
-        _ => StopReason::Stop,
-    }
-}
-
 fn build_params(
     model: &Model<OpenAICompletions>,
     context: &Context,
@@ -628,21 +239,27 @@ fn build_params(
         "stream": true,
     });
 
-    // Add messages
-    let messages = convert_messages(model, context, compat);
-    params["messages"] = messages;
+    let system_role = if model.reasoning && compat.supports_developer_role {
+        SystemPromptRole::Developer
+    } else {
+        SystemPromptRole::System
+    };
 
-    // Stream options
+    let message_options = OpenAiLikeMessageOptions {
+        system_role,
+        requires_tool_result_name: compat.requires_tool_result_name,
+    };
+
+    params["messages"] = convert_messages(model, context, &message_options);
+
     if compat.supports_usage_in_streaming {
         params["stream_options"] = json!({ "include_usage": true });
     }
 
-    // Store option
     if compat.supports_store {
         params["store"] = json!(false);
     }
 
-    // Max tokens
     if let Some(max_tokens) = options.max_tokens {
         match compat.max_tokens_field {
             MaxTokensField::MaxTokens => {
@@ -654,227 +271,30 @@ fn build_params(
         }
     }
 
-    // Temperature
-    if let Some(temp) = options.temperature {
-        params["temperature"] = json!(temp);
+    if let Some(temperature) = options.temperature {
+        params["temperature"] = json!(temperature);
     }
 
-    // Tools
     if let Some(tools) = &context.tools {
         params["tools"] = convert_tools(tools);
     }
 
-    // Tool choice
-    if let Some(tc) = &options.tool_choice {
-        params["tool_choice"] = serde_json::to_value(tc).unwrap_or(json!("auto"));
+    if let Some(tool_choice) = &options.tool_choice {
+        params["tool_choice"] = serde_json::to_value(tool_choice).unwrap_or(json!("auto"));
     }
 
-    // Reasoning effort
-    if let Some(effort) = &options.reasoning_effort {
-        if model.reasoning && compat.supports_reasoning_effort {
+    if model.reasoning && compat.supports_reasoning_effort {
+        if let Some(reasoning_effort) = &options.reasoning_effort {
             if compat.thinking_format == ThinkingFormat::Zai {
                 params["thinking"] = json!({ "type": "enabled" });
             } else {
                 params["reasoning_effort"] =
-                    serde_json::to_value(effort).unwrap_or(json!("medium"));
+                    serde_json::to_value(reasoning_effort).unwrap_or(json!("medium"));
             }
         }
     }
 
     params
-}
-
-fn convert_messages(
-    model: &Model<OpenAICompletions>,
-    context: &Context,
-    compat: &ResolvedCompat,
-) -> serde_json::Value {
-    let mut messages = Vec::new();
-
-    push_system_prompt(&mut messages, model, context, compat);
-
-    for msg in &context.messages {
-        match msg {
-            crate::types::Message::User(user) => {
-                messages.push(convert_user_message(model, user));
-            }
-            crate::types::Message::Assistant(assistant) => {
-                if let Some(converted) = convert_assistant_message(assistant) {
-                    messages.push(converted);
-                }
-            }
-            crate::types::Message::ToolResult(result) => {
-                messages.push(convert_tool_result(result, compat));
-            }
-        }
-    }
-
-    json!(messages)
-}
-
-fn push_system_prompt(
-    messages: &mut Vec<serde_json::Value>,
-    model: &Model<OpenAICompletions>,
-    context: &Context,
-    compat: &ResolvedCompat,
-) {
-    if let Some(system) = &context.system_prompt {
-        let role = if model.reasoning && compat.supports_developer_role {
-            "developer"
-        } else {
-            "system"
-        };
-        messages.push(json!({
-            "role": role,
-            "content": system,
-        }));
-    }
-}
-
-fn convert_user_message(
-    model: &Model<OpenAICompletions>,
-    user: &crate::types::UserMessage,
-) -> serde_json::Value {
-    let content = user_content_to_json(model, &user.content);
-    json!({
-        "role": "user",
-        "content": content,
-    })
-}
-
-fn user_content_to_json(
-    model: &Model<OpenAICompletions>,
-    content: &crate::types::UserContent,
-) -> serde_json::Value {
-    match content {
-        crate::types::UserContent::Text(text) => json!(text),
-        crate::types::UserContent::Multi(blocks) => {
-            let parts: Vec<serde_json::Value> = blocks
-                .iter()
-                .filter_map(|block| match block {
-                    crate::types::UserContentBlock::Text(t) => {
-                        Some(json!({ "type": "text", "text": t.text }))
-                    }
-                    crate::types::UserContentBlock::Image(img) => {
-                        if model.input.contains(&crate::types::InputType::Image) {
-                            Some(json!({
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": format!("data:{};base64,{}", img.mime_type, img.to_base64())
-                                }
-                            }))
-                        } else {
-                            None
-                        }
-                    }
-                })
-                .collect();
-            json!(parts)
-        }
-    }
-}
-
-fn convert_assistant_message(
-    assistant: &crate::types::AssistantMessage,
-) -> Option<serde_json::Value> {
-    let mut msg = json!({
-        "role": "assistant",
-    });
-
-    let text_parts = assistant_text_parts(assistant);
-
-    if !text_parts.is_empty() {
-        msg["content"] = json!(text_parts
-            .iter()
-            .map(|text| json!({ "type": "text", "text": text }))
-            .collect::<Vec<_>>());
-    }
-
-    let tool_calls = assistant_tool_calls(assistant);
-
-    if !tool_calls.is_empty() {
-        msg["tool_calls"] = json!(tool_calls);
-    }
-
-    if msg.get("content").is_none() && msg.get("tool_calls").is_none() {
-        return None;
-    }
-
-    Some(msg)
-}
-
-fn assistant_text_parts(assistant: &crate::types::AssistantMessage) -> Vec<String> {
-    assistant
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            Content::Text { inner } if !inner.text.is_empty() => Some(inner.text.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
-fn assistant_tool_calls(assistant: &crate::types::AssistantMessage) -> Vec<serde_json::Value> {
-    assistant
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            Content::ToolCall { inner } => Some(json!({
-                "id": inner.id,
-                "type": "function",
-                "function": {
-                    "name": inner.name,
-                    "arguments": inner.arguments.to_string(),
-                }
-            })),
-            _ => None,
-        })
-        .collect()
-}
-
-fn convert_tool_result(
-    result: &crate::types::ToolResultMessage,
-    compat: &ResolvedCompat,
-) -> serde_json::Value {
-    let content = result
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            crate::types::message::ToolResultContent::Text(text) => Some(text.text.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let mut msg = json!({
-        "role": "tool",
-        "tool_call_id": result.tool_call_id,
-        "content": content,
-    });
-
-    if compat.requires_tool_result_name {
-        msg["name"] = json!(result.tool_name);
-    }
-
-    msg
-}
-
-fn convert_tools(tools: &[Tool]) -> serde_json::Value {
-    let converted: Vec<serde_json::Value> = tools
-        .iter()
-        .map(|tool| {
-            json!({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                    "strict": false,
-                }
-            })
-        })
-        .collect();
-    json!(converted)
 }
 
 /// Detect compatibility settings from provider and base URL.
@@ -939,13 +359,11 @@ fn resolve_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
     }
 }
 
-// SSE Response types
-
 #[derive(Debug, Deserialize)]
 struct StreamChunk {
     #[serde(default)]
     choices: Vec<StreamChoice>,
-    usage: Option<StreamUsage>,
+    usage: Option<OpenAiLikeStreamUsage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -960,52 +378,7 @@ struct StreamDelta {
     reasoning_content: Option<String>,
     reasoning: Option<String>,
     reasoning_text: Option<String>,
-    tool_calls: Option<Vec<StreamToolCall>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StreamToolCall {
-    id: Option<String>,
-    function: Option<StreamFunction>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StreamFunction {
-    name: Option<String>,
-    arguments: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StreamUsage {
-    prompt_tokens: u32,
-    completion_tokens: u32,
-    total_tokens: Option<u32>,
-    cache_read_input_tokens: Option<u32>,
-    cache_creation_input_tokens: Option<u32>,
-    cost: Option<f64>,
-    cost_details: Option<StreamCostDetails>,
-    prompt_tokens_details: Option<PromptTokensDetails>,
-    #[serde(rename = "completion_tokens_details")]
-    _completion_tokens_details: Option<CompletionTokensDetails>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StreamCostDetails {
-    upstream_inference_prompt_cost: Option<f64>,
-    upstream_inference_completions_cost: Option<f64>,
-    upstream_inference_cost: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PromptTokensDetails {
-    cached_tokens: Option<u32>,
-    cache_write_tokens: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CompletionTokensDetails {
-    #[serde(rename = "reasoning_tokens")]
-    _reasoning_tokens: Option<u32>,
+    tool_calls: Option<Vec<OpenAiLikeToolCallDelta>>,
 }
 
 #[cfg(test)]
@@ -1033,25 +406,15 @@ mod tests {
                 cache_read: 0.0,
                 cache_write: 0.0,
             },
-            context_window: 128000,
-            max_tokens: 4096,
+            context_window: 128_000,
+            max_tokens: 4_096,
             headers: None,
             compat: None,
         }
     }
 
     #[test]
-    fn test_map_stop_reason() {
-        assert_eq!(map_stop_reason("stop"), StopReason::Stop);
-        assert_eq!(map_stop_reason("length"), StopReason::Length);
-        assert_eq!(map_stop_reason("tool_calls"), StopReason::ToolUse);
-        assert_eq!(map_stop_reason("function_call"), StopReason::ToolUse);
-        assert_eq!(map_stop_reason("content_filter"), StopReason::Error);
-        assert_eq!(map_stop_reason("unknown"), StopReason::Stop);
-    }
-
-    #[test]
-    fn test_detect_compat_openai() {
+    fn detect_compat_for_openai_defaults() {
         let model = make_test_model(
             "gpt-4",
             "GPT-4",
@@ -1068,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_compat_mistral() {
+    fn detect_compat_for_mistral_defaults() {
         let model = make_test_model(
             "mistral-large",
             "Mistral Large",
@@ -1082,168 +445,5 @@ mod tests {
         assert_eq!(compat.max_tokens_field, MaxTokensField::MaxTokens);
         assert!(compat.requires_mistral_tool_ids);
         assert!(compat.requires_tool_result_name);
-    }
-
-    fn make_output_message() -> AssistantMessage {
-        AssistantMessage {
-            content: vec![],
-            api: Api::OpenAICompletions,
-            provider: Provider::Known(KnownProvider::OpenAI),
-            model: "test-model".to_string(),
-            usage: Usage::default(),
-            stop_reason: StopReason::Stop,
-            error_message: None,
-            timestamp: 0,
-        }
-    }
-
-    #[test]
-    fn test_update_usage_from_chunk_uses_provider_raw_totals() {
-        let usage: StreamUsage = serde_json::from_value(serde_json::json!({
-            "prompt_tokens": 79,
-            "completion_tokens": 114,
-            "completion_tokens_details": {
-                "reasoning_tokens": 91
-            },
-            "total_tokens": 193
-        }))
-        .expect("valid usage payload");
-
-        let mut output = make_output_message();
-        update_usage_from_chunk(&usage, &mut output);
-
-        assert_eq!(output.usage.input, 79);
-        assert_eq!(output.usage.output, 114);
-        assert_eq!(output.usage.total_tokens, 193);
-    }
-
-    #[test]
-    fn test_update_usage_from_chunk_uses_provider_cache_tokens_when_present() {
-        let usage = StreamUsage {
-            prompt_tokens: 100,
-            completion_tokens: 25,
-            total_tokens: Some(125),
-            cache_read_input_tokens: Some(12),
-            cache_creation_input_tokens: Some(9),
-            cost: None,
-            cost_details: None,
-            prompt_tokens_details: Some(PromptTokensDetails {
-                cached_tokens: Some(7),
-                cache_write_tokens: Some(5),
-            }),
-            _completion_tokens_details: None,
-        };
-
-        let mut output = make_output_message();
-        update_usage_from_chunk(&usage, &mut output);
-
-        assert_eq!(output.usage.cache_read, 12);
-        assert_eq!(output.usage.cache_write, 9);
-    }
-
-    #[test]
-    fn test_update_usage_from_chunk_falls_back_to_prompt_details() {
-        let usage = StreamUsage {
-            prompt_tokens: 80,
-            completion_tokens: 20,
-            total_tokens: None,
-            cache_read_input_tokens: None,
-            cache_creation_input_tokens: None,
-            cost: None,
-            cost_details: None,
-            prompt_tokens_details: Some(PromptTokensDetails {
-                cached_tokens: Some(15),
-                cache_write_tokens: Some(4),
-            }),
-            _completion_tokens_details: None,
-        };
-
-        let mut output = make_output_message();
-        update_usage_from_chunk(&usage, &mut output);
-
-        assert_eq!(output.usage.cache_read, 15);
-        assert_eq!(output.usage.cache_write, 4);
-        assert_eq!(output.usage.total_tokens, 100);
-    }
-
-    #[test]
-    fn test_update_usage_from_chunk_maps_cost_details() {
-        let usage: StreamUsage = serde_json::from_value(serde_json::json!({
-            "prompt_tokens": 16,
-            "completion_tokens": 4,
-            "total_tokens": 20,
-            "cost": 0.0001782,
-            "cost_details": {
-                "upstream_inference_prompt_cost": 0.00008,
-                "upstream_inference_completions_cost": 0.0001,
-                "upstream_inference_cost": 0.00018
-            }
-        }))
-        .expect("valid usage payload");
-
-        let mut output = make_output_message();
-        update_usage_from_chunk(&usage, &mut output);
-
-        assert_eq!(output.usage.cost.input, 0.00008);
-        assert_eq!(output.usage.cost.output, 0.0001);
-        assert_eq!(output.usage.cost.total, 0.00018);
-    }
-
-    #[test]
-    fn test_update_usage_from_chunk_uses_top_level_cost_when_details_missing() {
-        let usage: StreamUsage = serde_json::from_value(serde_json::json!({
-            "prompt_tokens": 16,
-            "completion_tokens": 4,
-            "total_tokens": 20,
-            "cost": 0.0001782
-        }))
-        .expect("valid usage payload");
-
-        let mut output = make_output_message();
-        update_usage_from_chunk(&usage, &mut output);
-
-        assert_eq!(output.usage.cost.input, 0.0);
-        assert_eq!(output.usage.cost.output, 0.0);
-        assert_eq!(output.usage.cost.total, 0.0001782);
-    }
-
-    #[test]
-    fn test_update_usage_from_chunk_falls_back_to_component_sum_when_total_missing() {
-        let usage: StreamUsage = serde_json::from_value(serde_json::json!({
-            "prompt_tokens": 16,
-            "completion_tokens": 4,
-            "total_tokens": 20,
-            "cost_details": {
-                "upstream_inference_prompt_cost": 0.00008,
-                "upstream_inference_completions_cost": 0.0001
-            }
-        }))
-        .expect("valid usage payload");
-
-        let mut output = make_output_message();
-        update_usage_from_chunk(&usage, &mut output);
-
-        assert_eq!(output.usage.cost.input, 0.00008);
-        assert_eq!(output.usage.cost.output, 0.0001);
-        assert_eq!(output.usage.cost.total, 0.00018);
-    }
-
-    #[test]
-    fn test_update_usage_from_chunk_defaults_cost_to_zero_when_missing() {
-        let usage: StreamUsage = serde_json::from_value(serde_json::json!({
-            "prompt_tokens": 16,
-            "completion_tokens": 4,
-            "total_tokens": 20
-        }))
-        .expect("valid usage payload");
-
-        let mut output = make_output_message();
-        update_usage_from_chunk(&usage, &mut output);
-
-        assert_eq!(output.usage.cost.input, 0.0);
-        assert_eq!(output.usage.cost.output, 0.0);
-        assert_eq!(output.usage.cost.cache_read, 0.0);
-        assert_eq!(output.usage.cost.cache_write, 0.0);
-        assert_eq!(output.usage.cost.total, 0.0);
     }
 }

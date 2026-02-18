@@ -144,6 +144,9 @@ async fn main() -> alchemy_llm::Result<()> {
 | `api_lifecycle` | Full API lifecycle demonstration |
 | `simple_chat` | Basic chat with GPT-4o-mini |
 | `tool_calling` | Tool/function calling with weather API |
+| `minimax_live_reasoning_split` | Live MiniMax stream with `reasoning_split` enabled |
+| `minimax_live_inline_think` | Live MiniMax stream exercising `<think>` fallback parsing |
+| `minimax_live_usage_chunk` | Live MiniMax final message + usage summary |
 
 ## Development
 

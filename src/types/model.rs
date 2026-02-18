@@ -73,6 +73,17 @@ impl ApiType for OpenAIResponses {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct MinimaxCompletions;
+
+impl ApiType for MinimaxCompletions {
+    type Compat = NoCompat;
+
+    fn api(&self) -> Api {
+        Api::MinimaxCompletions
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct GoogleGenerativeAi;
 
 impl ApiType for GoogleGenerativeAi {

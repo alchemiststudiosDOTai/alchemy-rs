@@ -9,6 +9,7 @@ pub enum Api {
     BedrockConverseStream,
     OpenAICompletions,
     OpenAIResponses,
+    MinimaxCompletions,
     GoogleGenerativeAi,
     GoogleVertex,
 }
@@ -20,6 +21,7 @@ impl Display for Api {
             Self::BedrockConverseStream => write!(f, "bedrock-converse-stream"),
             Self::OpenAICompletions => write!(f, "openai-completions"),
             Self::OpenAIResponses => write!(f, "openai-responses"),
+            Self::MinimaxCompletions => write!(f, "minimax-completions"),
             Self::GoogleGenerativeAi => write!(f, "google-generative-ai"),
             Self::GoogleVertex => write!(f, "google-vertex"),
         }
@@ -35,6 +37,7 @@ impl FromStr for Api {
             "bedrock-converse-stream" => Ok(Self::BedrockConverseStream),
             "openai-completions" => Ok(Self::OpenAICompletions),
             "openai-responses" => Ok(Self::OpenAIResponses),
+            "minimax-completions" => Ok(Self::MinimaxCompletions),
             "google-generative-ai" => Ok(Self::GoogleGenerativeAi),
             "google-vertex" => Ok(Self::GoogleVertex),
             _ => Err(crate::Error::UnknownApi(s.to_string())),
@@ -175,5 +178,18 @@ pub struct NoCompat;
 impl CompatibilityOptions for NoCompat {
     fn as_any(&self) -> Option<&dyn std::any::Any> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Api;
+    use std::str::FromStr;
+
+    #[test]
+    fn minimax_completions_api_round_trip() {
+        let parsed = Api::from_str("minimax-completions").expect("valid minimax API variant");
+        assert_eq!(parsed, Api::MinimaxCompletions);
+        assert_eq!(parsed.to_string(), "minimax-completions");
     }
 }

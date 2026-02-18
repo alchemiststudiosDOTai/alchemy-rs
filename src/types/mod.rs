@@ -17,8 +17,8 @@ pub use message::{
     UserContentBlock, UserMessage,
 };
 pub use model::{
-    AnthropicMessages, BedrockConverseStream, GoogleGenerativeAi, GoogleVertex, InputType, Model,
-    OpenAICompletions, OpenAIResponses,
+    AnthropicMessages, BedrockConverseStream, GoogleGenerativeAi, GoogleVertex, InputType,
+    MinimaxCompletions, Model, OpenAICompletions, OpenAIResponses,
 };
 pub use options::{SimpleStreamOptions, StreamOptions, ThinkingLevel};
 pub use tool::Tool;
