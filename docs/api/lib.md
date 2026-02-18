@@ -1,128 +1,118 @@
 ---
-summary: "Public API surface with re-exports of all crate modules and entry points"
+summary: "Public API surface with crate modules, provider entry points, model constructors, and utility exports"
 read_when:
-  - You want to understand what's available in the alchemy_llm crate
-  - You need to find the correct import for a type or function
-  - You're getting started with Alchemy and need an overview
+  - You want to understand what `alchemy_llm` exports from `src/lib.rs`
+  - You need the correct import path for stream functions and core types
+  - You want to discover built-in MiniMax model constructors
 ---
 
-# Public API
+# Public API (`src/lib.rs`)
 
-The `src/lib.rs` file defines the public API surface for the `alchemy_llm` crate. All publicly exported types and functions are re-exported here for convenience.
+`alchemy_llm` re-exports its main modules and top-level helpers from `src/lib.rs`.
 
-## Module Structure
+## Module Layout
 
-```
+```text
 src/
   lib.rs       # Public API re-exports
-  error.rs     # Error types
+  error.rs     # Error enum + Result alias
+  models/      # Built-in model constructors
   providers/   # Provider implementations
-  stream/      # Streaming API
-  transform.rs # Message transformation
-  types/       # Core type definitions
-  utils/       # Utility functions
+  stream/      # stream() + complete() entry points
+  transform.rs # Cross-provider message transformation
+  types/       # Core data structures
+  utils/       # Shared helper utilities
 ```
 
-## Public Exports
+## Top-Level Re-Exports
 
-### Error Types
+### Error
 
 ```rust
 pub use error::{Error, Result};
+```
+
+### Model Constructors
+
+```rust
+pub use models::{
+    minimax_cn_m2, minimax_cn_m2_1, minimax_cn_m2_1_highspeed, minimax_cn_m2_5,
+    minimax_cn_m2_5_highspeed, minimax_m2, minimax_m2_1, minimax_m2_1_highspeed,
+    minimax_m2_5, minimax_m2_5_highspeed,
+};
 ```
 
 ### Provider Functions
 
 ```rust
 pub use providers::{
-    get_env_api_key,           // Get API key from environment
-    stream_openai_completions, // OpenAI completions streaming
-    OpenAICompletionsOptions,  // Options for OpenAI completions
+    get_env_api_key,
+    stream_minimax_completions,
+    stream_openai_completions,
+    OpenAICompletionsOptions,
 };
 ```
 
-### Stream API
+### Stream Entry Points
 
 ```rust
-pub use stream::{
-    complete,                      // Non-streaming completion
-    stream,                        // Streaming completion
-    AssistantMessageEventStream,   // Event stream type
-};
+pub use stream::{complete, stream, AssistantMessageEventStream};
 ```
 
-### Transform API
+### Transform
 
 ```rust
-pub use transform::{
-    transform_messages,        // Transform messages for target model
-    transform_messages_simple, // Transform without ID normalization
-    TargetModel,               // Target model information
-};
+pub use transform::{transform_messages, transform_messages_simple, TargetModel};
 ```
 
 ### Utilities
 
 ```rust
 pub use utils::{
-    is_context_overflow,         // Detect context overflow
-    parse_streaming_json,        // Parse incomplete JSON
-    parse_streaming_json_smart,  // Smart partial JSON parsing
-    sanitize_for_api,            // Sanitize strings for API
-    sanitize_surrogates,         // Remove UTF-16 surrogates
-    validate_tool_arguments,     // Validate tool call arguments
-    validate_tool_call,          // Validate tool against tools
+    is_context_overflow,
+    parse_streaming_json,
+    parse_streaming_json_smart,
+    sanitize_for_api,
+    sanitize_surrogates,
+    validate_tool_arguments,
+    validate_tool_call,
+    ThinkFragment,
+    ThinkTagParser,
 };
 ```
 
-## Quick Start
+## Recommended Usage Pattern
+
+Use `stream()` for provider-agnostic dispatch and built-in model constructors when available.
 
 ```rust
-use alchemy_llm::{
-    stream,
-    types::{
-        AssistantMessageEvent, Context, InputType, KnownProvider, Message, Model, ModelCost,
-        OpenAICompletions, Provider, UserContent, UserMessage,
-    },
-};
+use alchemy_llm::{minimax_m2_5, stream, OpenAICompletionsOptions};
+use alchemy_llm::types::{AssistantMessageEvent, Context, Message, UserContent, UserMessage};
 use futures::StreamExt;
 
 #[tokio::main]
 async fn main() -> alchemy_llm::Result<()> {
-    let model = Model::<OpenAICompletions> {
-        id: "gpt-4o-mini".to_string(),
-        name: "GPT-4o Mini".to_string(),
-        api: OpenAICompletions,
-        provider: Provider::Known(KnownProvider::OpenAI),
-        base_url: "https://api.openai.com/v1".to_string(),
-        reasoning: false,
-        input: vec![InputType::Text],
-        cost: ModelCost {
-            input: 0.0,
-            output: 0.0,
-            cache_read: 0.0,
-            cache_write: 0.0,
-        },
-        context_window: 128_000,
-        max_tokens: 16_384,
-        headers: None,
-        compat: None,
-    };
+    let model = minimax_m2_5();
 
     let context = Context {
-        system_prompt: None,
+        system_prompt: Some("You are concise.".to_string()),
         messages: vec![Message::User(UserMessage {
-            content: UserContent::Text("Hello!".to_string()),
+            content: UserContent::Text("Explain ownership in two bullets.".to_string()),
             timestamp: 0,
         })],
         tools: None,
     };
 
-    let mut stream = stream(&model, &context, None)?;
+    let options = Some(OpenAICompletionsOptions {
+        api_key: std::env::var("MINIMAX_API_KEY").ok(),
+        ..OpenAICompletionsOptions::default()
+    });
 
-    while let Some(event) = stream.next().await {
+    let mut events = stream(&model, &context, options)?;
+
+    while let Some(event) = events.next().await {
         if let AssistantMessageEvent::TextDelta { delta, .. } = event {
-            print!("{}", delta);
+            print!("{delta}");
         }
     }
 
@@ -130,60 +120,8 @@ async fn main() -> alchemy_llm::Result<()> {
 }
 ```
 
-## Pattern: Streaming Completion
+## Notes
 
-```rust
-use alchemy_llm::{stream, types::*};
-use futures::StreamExt;
-
-async fn chat(model: &Model<OpenAICompletions>, messages: Vec<Message>) -> Result<String> {
-    let context = Context {
-        system_prompt: None,
-        messages,
-        tools: None,
-    };
-    let mut stream = stream(model, &context, None)?;
-
-    let mut response = String::new();
-    while let Some(event) = stream.next().await {
-        if let AssistantMessageEvent::TextDelta { delta, .. } = event {
-            response.push_str(&delta);
-            print!("{}", delta);
-        }
-    }
-
-    Ok(response)
-}
-```
-
-## Pattern: Cross-Provider Transformation
-
-```rust
-use alchemy_llm::transform_messages_simple;
-use alchemy_llm::types::{Api, KnownProvider, Message, Provider};
-use alchemy_llm::TargetModel;
-
-fn switch_provider(messages: Vec<Message>) -> Vec<Message> {
-    let target = TargetModel {
-        api: Api::OpenAICompletions,
-        provider: Provider::Known(KnownProvider::OpenAI),
-        model_id: "gpt-4o".to_string(),
-    };
-
-    transform_messages_simple(&messages, &target)
-}
-```
-
-## Pattern: Tool Validation
-
-```rust
-use alchemy_llm::validate_tool_call;
-use alchemy_llm::types::{Tool, ToolCall};
-use alchemy_llm::Result;
-
-fn check_tool_call(tools: &[Tool], call: &ToolCall) -> Result<()> {
-    let validated_args = validate_tool_call(tools, call)?;
-    println!("Validated: {}", validated_args);
-    Ok(())
-}
-```
+- `stream()` resolves API keys from options first, then environment variables via `get_env_api_key()`.
+- `complete()` is a convenience wrapper around `stream()` that returns the final `AssistantMessage`.
+- `types::*` contains the canonical cross-provider event/message contracts used by all providers.

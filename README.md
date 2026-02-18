@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/alchemy-llm/badge.svg)](https://docs.rs/alchemy-llm)
 [![License: MIT](https://img.shields.io/crates/l/alchemy-llm.svg)](https://opensource.org/licenses/MIT)
 
-A unified LLM API abstraction layer in Rust that supports 8+ providers through a consistent interface.
+A unified LLM API abstraction layer in Rust that supports 10+ providers through a consistent interface.
 
 > **Warning:** This project is in early development (v0.1.x). APIs may change without notice. Not recommended for production use yet.
 
@@ -19,10 +19,14 @@ A unified LLM API abstraction layer in Rust that supports 8+ providers through a
 - **Google** (Gemini)
 - **AWS Bedrock**
 - **Mistral**
+- **MiniMax** (Global)
+- **MiniMax CN**
 - **xAI** (Grok)
 - **Groq**
 - **Cerebras**
 - **OpenRouter**
+
+> Current first-class streaming implementations in Rust: **OpenAI Completions** and **MiniMax Completions**. Other provider APIs are being ported incrementally.
 
 ## Features
 
@@ -147,6 +151,13 @@ async fn main() -> alchemy_llm::Result<()> {
 | `minimax_live_reasoning_split` | Live MiniMax stream with `reasoning_split` enabled |
 | `minimax_live_inline_think` | Live MiniMax stream exercising `<think>` fallback parsing |
 | `minimax_live_usage_chunk` | Live MiniMax final message + usage summary |
+
+## Documentation
+
+- [docs/README.md](./docs/README.md) - Documentation index
+- [docs/providers/minimax.md](./docs/providers/minimax.md) - MiniMax provider guide
+- [docs/api/lib.md](./docs/api/lib.md) - Public API surface
+- [docs/utils/transform.md](./docs/utils/transform.md) - Message transformation guide
 
 ## Development
 

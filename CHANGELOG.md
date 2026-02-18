@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+- First-class MiniMax provider via `Api::MinimaxCompletions` and `stream_minimax_completions`
+- Built-in MiniMax model constructors for global and CN endpoints
+- Live MiniMax examples and smoke scripts for reasoning split, `<think>` fallback, and usage chunks
+- New MiniMax provider guide: `docs/providers/minimax.md`
+- Documentation index: `docs/README.md`
+
+### Fixed
+- MiniMax temperature is clamped to supported range `(0.0, 1.0]`
+- Assistant thinking replay preserves `<think>...</think>` wrapping semantics
+
 ## [0.1.3] - 2026-02-12
 
 ### Fixed
