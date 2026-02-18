@@ -106,11 +106,11 @@ async fn main() -> alchemy_llm::Result<()> {
 
 - **Crate:** [alchemy-llm on crates.io](https://crates.io/crates/alchemy-llm)
 - **Docs:** [docs.rs/alchemy-llm](https://docs.rs/alchemy-llm)
-- Current version: `0.1.3`
-- Release notes: [CHANGELOG.md](./CHANGELOG.md#013---2026-02-12)
+- Current version: `0.1.4`
+- Release notes: [CHANGELOG.md](./CHANGELOG.md#014---2026-02-18)
 - Highlights:
-  - Populate `usage.cost` from OpenAI-compatible streaming payloads
-  - Fix doctest crate paths to `alchemy_llm`
+  - Add first-class MiniMax provider and model catalog
+  - Add `<think>` fallback parsing and MiniMax smoke examples
 
 ## Setup
 

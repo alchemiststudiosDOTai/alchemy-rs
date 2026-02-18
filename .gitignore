@@ -11,6 +11,7 @@ Cargo.lock
 
 # Worktree
 .worktree-meta
+.tickets/
 
 # Python
 __pycache__/

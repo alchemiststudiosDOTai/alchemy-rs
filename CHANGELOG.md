@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-02-18
+
 ### Added
 - First-class MiniMax provider via `Api::MinimaxCompletions` and `stream_minimax_completions`
 - Built-in MiniMax model constructors for global and CN endpoints

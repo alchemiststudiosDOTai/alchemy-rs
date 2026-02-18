@@ -1,9 +1,9 @@
 [package]
 name = "alchemy-llm"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 rust-version = "1.70"
-description = "Unified LLM API abstraction layer supporting 8+ providers through a consistent streaming interface"
+description = "Unified LLM API abstraction layer supporting 10+ providers through a consistent streaming interface"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/alchemiststudiosDOTai/alchemy-rs"
@@ -18,6 +18,7 @@ exclude = [
     "website/*",
     "docs/",
     "assets/",
+    ".tickets/",
     "AGENTS.md",
     "CLAUDE.md",
     ".env*",
