@@ -6,6 +6,7 @@ pub mod message;
 pub mod model;
 pub mod options;
 pub mod tool;
+pub mod tool_call_id;
 pub mod usage;
 
 pub use api::{Api, ApiType, CompatibilityOptions, KnownProvider, NoCompat, Provider};
@@ -22,4 +23,5 @@ pub use model::{
 };
 pub use options::{SimpleStreamOptions, StreamOptions, ThinkingLevel};
 pub use tool::Tool;
+pub use tool_call_id::ToolCallId;
 pub use usage::{Cost, ModelCost, StopReason, Usage};

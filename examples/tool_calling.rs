@@ -1,8 +1,8 @@
 use alchemy_llm::providers::openai_completions::ToolChoice;
 use alchemy_llm::types::{
     AssistantMessage, AssistantMessageEvent, Context, InputType, KnownProvider, Message, Model,
-    ModelCost, OpenAICompletions, Provider, TextContent, Tool, ToolCall, ToolResultContent,
-    ToolResultMessage, UserContent, UserMessage,
+    ModelCost, OpenAICompletions, Provider, TextContent, Tool, ToolCall, ToolCallId,
+    ToolResultContent, ToolResultMessage, UserContent, UserMessage,
 };
 use alchemy_llm::{stream, OpenAICompletionsOptions};
 use futures::StreamExt;
@@ -74,7 +74,7 @@ async fn stream_message(
 }
 
 fn tool_result_text(
-    tool_call_id: String,
+    tool_call_id: ToolCallId,
     tool_name: String,
     text: String,
     is_error: bool,

@@ -370,7 +370,7 @@ pub(crate) fn finish_current_block(
                 .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
 
             if let Some(Content::ToolCall { inner }) = output.content.get_mut(content_index) {
-                inner.id = id.clone();
+                inner.id = id.clone().into();
                 inner.name = name.clone();
                 inner.arguments = arguments.clone();
             }
@@ -378,7 +378,7 @@ pub(crate) fn finish_current_block(
             sender.push(AssistantMessageEvent::ToolCallEnd {
                 content_index,
                 tool_call: ToolCall {
-                    id,
+                    id: id.into(),
                     name,
                     arguments,
                     thought_signature: None,

@@ -9,7 +9,7 @@
 
 use crate::types::{
     Api, AssistantMessage, Content, Message, Provider, StopReason, TextContent, ToolCall,
-    ToolResultContent, ToolResultMessage,
+    ToolCallId, ToolResultContent, ToolResultMessage,
 };
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -58,7 +58,7 @@ pub fn transform_messages<F>(
 where
     F: Fn(&str, &TargetModel, &AssistantMessage) -> String,
 {
-    let mut tool_call_id_map: HashMap<String, String> = HashMap::new();
+    let mut tool_call_id_map: HashMap<ToolCallId, ToolCallId> = HashMap::new();
 
     // First pass: transform messages
     let transformed: Vec<Message> = messages
@@ -90,7 +90,7 @@ fn transform_message<F>(
     msg: &Message,
     target: &TargetModel,
     normalize_fn: Option<&F>,
-    id_map: &mut HashMap<String, String>,
+    id_map: &mut HashMap<ToolCallId, ToolCallId>,
 ) -> Option<Message>
 where
     F: Fn(&str, &TargetModel, &AssistantMessage) -> String,
@@ -165,7 +165,7 @@ fn transform_content_block<F>(
     target: &TargetModel,
     assistant: &AssistantMessage,
     normalize_fn: Option<&F>,
-    id_map: &mut HashMap<String, String>,
+    id_map: &mut HashMap<ToolCallId, ToolCallId>,
 ) -> Option<Content>
 where
     F: Fn(&str, &TargetModel, &AssistantMessage) -> String,
@@ -216,7 +216,8 @@ where
             // Normalize ID for different model
             if !is_same_model {
                 if let Some(normalize) = normalize_fn {
-                    let normalized_id = normalize(&inner.id, target, assistant);
+                    let normalized_id =
+                        ToolCallId::from(normalize(inner.id.as_str(), target, assistant));
                     if normalized_id != inner.id {
                         id_map.insert(inner.id.clone(), normalized_id.clone());
                         new_call.id = normalized_id;
@@ -234,7 +235,7 @@ where
 fn insert_synthetic_tool_results(messages: Vec<Message>) -> Vec<Message> {
     let mut result: Vec<Message> = Vec::new();
     let mut pending_tool_calls: Vec<ToolCall> = Vec::new();
-    let mut existing_result_ids: HashSet<String> = HashSet::new();
+    let mut existing_result_ids: HashSet<ToolCallId> = HashSet::new();
 
     for msg in messages {
         match &msg {
@@ -279,7 +280,7 @@ fn insert_synthetic_tool_results(messages: Vec<Message>) -> Vec<Message> {
 fn insert_orphaned_results(
     result: &mut Vec<Message>,
     pending: &[ToolCall],
-    existing: &HashSet<String>,
+    existing: &HashSet<ToolCallId>,
 ) {
     for tc in pending {
         if !existing.contains(&tc.id) {
@@ -538,7 +539,7 @@ mod tests {
         use serde_json::json;
 
         let tool_call = ToolCall {
-            id: "original-id-123".to_string(),
+            id: "original-id-123".into(),
             name: "search".to_string(),
             arguments: json!({"query": "test"}),
             thought_signature: Some("sig".to_string()),
@@ -551,7 +552,7 @@ mod tests {
         );
 
         let tool_result = ToolResultMessage {
-            tool_call_id: "original-id-123".to_string(),
+            tool_call_id: "original-id-123".into(),
             tool_name: "search".to_string(),
             content: vec![ToolResultContent::Text(TextContent {
                 text: "results".to_string(),
@@ -581,14 +582,14 @@ mod tests {
         // Check tool call ID was normalized
         if let Message::Assistant(a) = &result[0] {
             if let Content::ToolCall { inner } = &a.content[0] {
-                assert_eq!(inner.id, "call_original_id_123");
+                assert_eq!(inner.id.as_str(), "call_original_id_123");
                 assert!(inner.thought_signature.is_none()); // Stripped for different model
             }
         }
 
         // Check tool result ID was also normalized
         if let Message::ToolResult(r) = &result[1] {
-            assert_eq!(r.tool_call_id, "call_original_id_123");
+            assert_eq!(r.tool_call_id.as_str(), "call_original_id_123");
         }
     }
 
@@ -597,7 +598,7 @@ mod tests {
         use serde_json::json;
 
         let tool_call = ToolCall {
-            id: "call-123".to_string(),
+            id: "call-123".into(),
             name: "search".to_string(),
             arguments: json!({"query": "test"}),
             thought_signature: None,
@@ -627,7 +628,7 @@ mod tests {
         assert!(matches!(result[0], Message::Assistant(_)));
 
         if let Message::ToolResult(r) = &result[1] {
-            assert_eq!(r.tool_call_id, "call-123");
+            assert_eq!(r.tool_call_id.as_str(), "call-123");
             assert_eq!(r.tool_name, "search");
             assert!(r.is_error);
         } else {
@@ -648,7 +649,7 @@ mod tests {
             vec![
                 Content::ToolCall {
                     inner: ToolCall {
-                        id: "call-1".to_string(),
+                        id: "call-1".into(),
                         name: "tool_a".to_string(),
                         arguments: json!({}),
                         thought_signature: None,
@@ -656,7 +657,7 @@ mod tests {
                 },
                 Content::ToolCall {
                     inner: ToolCall {
-                        id: "call-2".to_string(),
+                        id: "call-2".into(),
                         name: "tool_b".to_string(),
                         arguments: json!({}),
                         thought_signature: None,
@@ -667,7 +668,7 @@ mod tests {
 
         // Only one result provided
         let result1 = ToolResultMessage {
-            tool_call_id: "call-1".to_string(),
+            tool_call_id: "call-1".into(),
             tool_name: "tool_a".to_string(),
             content: vec![ToolResultContent::Text(TextContent {
                 text: "result a".to_string(),
@@ -697,7 +698,7 @@ mod tests {
         // Find the synthetic result
         let synthetic = result.iter().find(|m| {
             if let Message::ToolResult(r) = m {
-                r.tool_call_id == "call-2"
+                r.tool_call_id.as_str() == "call-2"
             } else {
                 false
             }
@@ -720,7 +721,7 @@ mod tests {
             "claude-sonnet-4-20250514",
             vec![Content::ToolCall {
                 inner: ToolCall {
-                    id: "call-1".to_string(),
+                    id: "call-1".into(),
                     name: "search".to_string(),
                     arguments: json!({}),
                     thought_signature: None,
@@ -729,7 +730,7 @@ mod tests {
         );
 
         let result1 = ToolResultMessage {
-            tool_call_id: "call-1".to_string(),
+            tool_call_id: "call-1".into(),
             tool_name: "search".to_string(),
             content: vec![ToolResultContent::Text(TextContent {
                 text: "found it".to_string(),

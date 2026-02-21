@@ -2,6 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::content::{Content, ImageContent, TextContent};
+use super::tool_call_id::ToolCallId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "role")]
@@ -66,7 +67,7 @@ pub struct AssistantMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolResultMessage {
-    pub tool_call_id: String,
+    pub tool_call_id: ToolCallId,
     pub tool_name: String,
     pub content: Vec<ToolResultContent>,
     #[serde(skip_serializing_if = "Option::is_none")]

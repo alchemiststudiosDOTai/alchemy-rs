@@ -92,7 +92,7 @@ mod tests {
 
     fn make_tool_call(name: &str, arguments: serde_json::Value) -> ToolCall {
         ToolCall {
-            id: "test-id".to_string(),
+            id: "test-id".into(),
             name: name.to_string(),
             arguments,
             thought_signature: None,
