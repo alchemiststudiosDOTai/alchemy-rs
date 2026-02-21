@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-02-21
+
+### Added
+- First-class `ToolCallId` type in `types`, with serde-transparent serialization and public export
+- Cross-provider unified tool-call smoke example: `examples/tool_call_unified_types_smoke.rs`
+- Cross-provider smoke runner: `smokescripts/run_tool_call_unified_types.sh`
+
+### Changed
+- `ToolCall.id` now uses `ToolCallId` instead of raw `String`
+- `ToolResultMessage.tool_call_id` now uses `ToolCallId` instead of raw `String`
+- Transform ID mapping internals now use typed `ToolCallId` keys/values
+- Unified tool-call smoke defaults to full typed event + final typed response output
+
 ## [0.1.4] - 2026-02-18
 
 ### Added

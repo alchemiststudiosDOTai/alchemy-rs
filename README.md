@@ -106,11 +106,11 @@ async fn main() -> alchemy_llm::Result<()> {
 
 - **Crate:** [alchemy-llm on crates.io](https://crates.io/crates/alchemy-llm)
 - **Docs:** [docs.rs/alchemy-llm](https://docs.rs/alchemy-llm)
-- Current version: `0.1.4`
-- Release notes: [CHANGELOG.md](./CHANGELOG.md#014---2026-02-18)
+- Current version: `0.1.5`
+- Release notes: [CHANGELOG.md](./CHANGELOG.md#015---2026-02-21)
 - Highlights:
-  - Add first-class MiniMax provider and model catalog
-  - Add `<think>` fallback parsing and MiniMax smoke examples
+  - Add first-class `ToolCallId` type for unified tool-call identity
+  - Add cross-provider tool-call smoke flow (OpenRouter, MiniMax, Chutes) with full typed response output
 
 ## Setup
 
