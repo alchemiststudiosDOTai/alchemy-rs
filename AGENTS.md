@@ -9,6 +9,12 @@ memory-bank/plan/    Phase planning documents
 memory-bank/research/ Research and mapping docs
 ```
 
+## External Reference Repo
+
+We work closely with the `tinyAgent` team.
+Keep a local reference clone at `./tinyAgent/` for parity checks.
+Do not track this directory in this repository (it must stay gitignored).
+
 ## Design Philosophy
 
 **One-to-one port, not a rewrite.** Match TypeScript behavior exactly before optimizing.

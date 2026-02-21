@@ -34,3 +34,4 @@ qa-report-logic/
 .vscode/
 *.swp
 website/
+tinyAgent/
