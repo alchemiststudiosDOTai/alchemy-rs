@@ -35,11 +35,21 @@ Live smoke scripts for provider integrations.
 - `smokescripts/run_tool_call_unified_types.sh`  
   Runs `examples/tool_call_unified_types_smoke.rs`.
 
-This smoke proves unified type usage by logging:
-- `type(tool_call.id)`
-- `type(tool_result.tool_call_id)`
-- ID equality after copying into `ToolResultMessage`
-- serialized wire payload containing `tool_call_id`
+This smoke proves unified typing and emits full typed stream output per provider by default:
+- full `AssistantMessageEvent` debug output (`typed_event = ...`)
+- full final typed `AssistantMessage` JSON (`typed_done_message_json = ...`)
+- type lines:
+  - `type(tool_call)`
+  - `type(tool_call.id)`
+  - `type(tool_result)`
+  - `type(tool_result.tool_call_id)`
+
+Defaults in `run_tool_call_unified_types.sh`:
+- `TOOL_SMOKE_TYPES_ONLY=0`
+- `TOOL_SMOKE_FULL_TYPED_RESPONSE=1`
+
+For type-lines only mode:
+- `TOOL_SMOKE_TYPES_ONLY=1`
 
 ## Usage
 

@@ -63,7 +63,27 @@ fn value_type_name<T>(_value: &T) -> &'static str {
     std::any::type_name::<T>()
 }
 
-fn prove_unified_type(label: &str, tool_call: &ToolCall) -> Result<(), Box<dyn std::error::Error>> {
+fn types_only_output_enabled() -> bool {
+    matches!(
+        std::env::var("TOOL_SMOKE_TYPES_ONLY").ok().as_deref(),
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("on")
+    )
+}
+
+fn full_typed_output_enabled() -> bool {
+    matches!(
+        std::env::var("TOOL_SMOKE_FULL_TYPED_RESPONSE")
+            .ok()
+            .as_deref(),
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("on")
+    )
+}
+
+fn prove_unified_type(
+    label: &str,
+    tool_call: &ToolCall,
+    types_only: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     assert_unified_tool_call_id_type(&tool_call.id);
 
     let tool_result = ToolResultMessage {
@@ -80,21 +100,29 @@ fn prove_unified_type(label: &str, tool_call: &ToolCall) -> Result<(), Box<dyn s
 
     assert_unified_tool_call_id_type(&tool_result.tool_call_id);
 
+    println!("[{label}] type(tool_call) = {}", value_type_name(tool_call));
     println!(
         "[{label}] type(tool_call.id) = {}",
         value_type_name(&tool_call.id)
     );
     println!(
+        "[{label}] type(tool_result) = {}",
+        value_type_name(&tool_result)
+    );
+    println!(
         "[{label}] type(tool_result.tool_call_id) = {}",
         value_type_name(&tool_result.tool_call_id)
     );
-    println!(
-        "[{label}] id_equal_after_copy = {}",
-        tool_result.tool_call_id == tool_call.id
-    );
 
-    let serialized = serde_json::to_string(&tool_result)?;
-    println!("[{label}] serialized_tool_result = {serialized}");
+    if !types_only {
+        println!(
+            "[{label}] id_equal_after_copy = {}",
+            tool_result.tool_call_id == tool_call.id
+        );
+
+        let serialized = serde_json::to_string(&tool_result)?;
+        println!("[{label}] serialized_tool_result = {serialized}");
+    }
 
     Ok(())
 }
@@ -103,45 +131,72 @@ async fn run_provider_smoke<TApi>(
     label: &str,
     model: &Model<TApi>,
     api_key: String,
+    types_only: bool,
+    full_typed: bool,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     TApi: alchemy_llm::types::ApiType,
 {
-    println!("\n=== {label} ===");
-    println!("model: {}", model.id);
-    println!("provider: {}", model.provider);
-    println!("base_url: {}", model.base_url);
+    if !types_only {
+        println!("\n=== {label} ===");
+        println!("model: {}", model.id);
+        println!("provider: {}", model.provider);
+        println!("base_url: {}", model.base_url);
+    }
 
     let mut stream = stream(model, &build_context(), Some(make_options(api_key)))?;
     let mut saw_tool_call = false;
 
     while let Some(event) = stream.next().await {
+        if full_typed && !types_only {
+            println!("[{label}] typed_event = {event:#?}");
+        }
+
         match event {
             AssistantMessageEvent::ToolCallStart { content_index, .. } => {
-                println!("[{label}] tool_call_start block={content_index}");
+                if !types_only {
+                    println!("[{label}] tool_call_start block={content_index}");
+                }
             }
             AssistantMessageEvent::ToolCallDelta { delta, .. } => {
-                println!("[{label}] tool_call_delta bytes={}", delta.len());
+                if !types_only {
+                    println!("[{label}] tool_call_delta bytes={}", delta.len());
+                }
             }
             AssistantMessageEvent::ToolCallEnd { tool_call, .. } => {
                 saw_tool_call = true;
-                println!(
-                    "[{label}] tool_call_end name={} id={} empty_id={}",
-                    tool_call.name,
-                    tool_call.id,
-                    tool_call.id.is_empty()
-                );
-                println!("[{label}] tool_call_args={}", tool_call.arguments);
-                prove_unified_type(label, &tool_call)?;
+                if !types_only {
+                    println!(
+                        "[{label}] tool_call_end name={} id={} empty_id={}",
+                        tool_call.name,
+                        tool_call.id,
+                        tool_call.id.is_empty()
+                    );
+                    println!("[{label}] tool_call_args={}", tool_call.arguments);
+                }
+                prove_unified_type(label, &tool_call, types_only)?;
             }
             AssistantMessageEvent::Done { reason, message } => {
-                println!(
-                    "[{label}] done reason={reason:?} stop_reason={:?}",
-                    message.stop_reason
-                );
+                if !types_only {
+                    println!(
+                        "[{label}] done reason={reason:?} stop_reason={:?}",
+                        message.stop_reason
+                    );
+                }
+
+                if full_typed && !types_only {
+                    let typed_json = serde_json::to_string_pretty(&message)?;
+                    println!("[{label}] typed_done_message_json = {typed_json}");
+                }
+
                 break;
             }
             AssistantMessageEvent::Error { error, .. } => {
+                if full_typed && !types_only {
+                    let typed_error_json = serde_json::to_string_pretty(&error)?;
+                    println!("[{label}] typed_error_message_json = {typed_error_json}");
+                }
+
                 let message = error
                     .error_message
                     .unwrap_or_else(|| "Unknown provider error".to_string());
@@ -215,15 +270,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let minimax_api_key =
         std::env::var("MINIMAX_API_KEY").map_err(|_| "MINIMAX_API_KEY not set")?;
     let chutes_api_key = std::env::var("CHUTES_API_KEY").map_err(|_| "CHUTES_API_KEY not set")?;
+    let types_only = types_only_output_enabled();
+    let full_typed = full_typed_output_enabled();
 
-    run_provider_smoke("openrouter", &openrouter_model(), openrouter_api_key).await?;
+    run_provider_smoke(
+        "openrouter",
+        &openrouter_model(),
+        openrouter_api_key,
+        types_only,
+        full_typed,
+    )
+    .await?;
 
     let mut minimax_model = minimax_m2_5();
     minimax_model.reasoning = false;
-    run_provider_smoke("minimax", &minimax_model, minimax_api_key).await?;
+    run_provider_smoke(
+        "minimax",
+        &minimax_model,
+        minimax_api_key,
+        types_only,
+        full_typed,
+    )
+    .await?;
 
-    run_provider_smoke("chutes", &chutes_model(), chutes_api_key).await?;
+    run_provider_smoke(
+        "chutes",
+        &chutes_model(),
+        chutes_api_key,
+        types_only,
+        full_typed,
+    )
+    .await?;
 
-    println!("\nAll provider tool-call smoke checks passed.");
+    if !types_only {
+        println!("\nAll provider tool-call smoke checks passed.");
+    }
     Ok(())
 }
