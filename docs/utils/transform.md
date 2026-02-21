@@ -33,6 +33,8 @@ Thinking blocks (`<thinking>...</thinking>`) are handled differently based on th
 
 Different providers have different ID requirements. The optional `normalize_tool_call_id` function builds a mapping from original IDs to normalized IDs, then applies the mapping to tool results.
 
+Internally, tool IDs are stored as first-class `ToolCallId` values (`types::ToolCallId`) across both assistant tool calls and tool result messages. The normalization callback still receives `&str` for compatibility, then outputs a normalized `String` that is wrapped into `ToolCallId`.
+
 ### 3. Orphaned Tool Call Handling
 
 If an assistant message contains tool calls but no results follow (e.g., user interrupted), synthetic error results are inserted. This satisfies API requirements that all tool calls must have corresponding results.

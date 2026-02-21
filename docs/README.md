@@ -22,14 +22,15 @@ read_when:
 
 - [utils/transform.md](./utils/transform.md) - Cross-provider conversation transformation
 
-## Latest Documented Merge (main)
+## Latest Release (0.1.5)
 
-The most recent merge to `main` introduced first-class MiniMax support:
+The latest published crate release adds first-class tool-call ID typing and cross-provider smoke coverage:
 
-- New API type: `Api::MinimaxCompletions`
-- New provider implementation: `src/providers/minimax.rs`
-- Built-in MiniMax model constructors under `src/models/minimax.rs`
-- Streaming reasoning support via `reasoning_split` and `<think>` fallback parsing
-- New MiniMax live examples and smoke scripts
+- New canonical `ToolCallId` type (`src/types/tool_call_id.rs`)
+- `ToolCall.id` and `ToolResultMessage.tool_call_id` now use `ToolCallId`
+- Unified cross-provider smoke flow for OpenRouter + MiniMax + Chutes
+- Full typed stream/event output in `smokescripts/run_tool_call_unified_types.sh`
 
-See the full guide: [providers/minimax.md](./providers/minimax.md).
+For release details, see [../CHANGELOG.md](../CHANGELOG.md#015---2026-02-21).
+
+For MiniMax-specific documentation from the previous release train, see [providers/minimax.md](./providers/minimax.md).

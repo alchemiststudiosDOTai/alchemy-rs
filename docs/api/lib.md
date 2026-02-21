@@ -125,3 +125,4 @@ async fn main() -> alchemy_llm::Result<()> {
 - `stream()` resolves API keys from options first, then environment variables via `get_env_api_key()`.
 - `complete()` is a convenience wrapper around `stream()` that returns the final `AssistantMessage`.
 - `types::*` contains the canonical cross-provider event/message contracts used by all providers.
+- Tool-call identity is modeled via `types::ToolCallId` and is shared by both `ToolCall.id` and `ToolResultMessage.tool_call_id`.
