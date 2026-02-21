@@ -247,11 +247,28 @@ fn should_start_new_tool_call(
     tool_call: &OpenAiLikeToolCallDelta,
 ) -> bool {
     match current_block {
-        Some(CurrentBlock::ToolCall { id, .. }) => {
-            tool_call.id.as_ref().is_some_and(|new_id| new_id != id)
-        }
-        _ => true,
+        Some(CurrentBlock::ToolCall { id, .. }) => tool_call
+            .id
+            .as_ref()
+            .is_some_and(|new_id| !new_id.is_empty() && !id.is_empty() && new_id != id),
+        _ => has_tool_call_identity(tool_call),
     }
+}
+
+fn has_tool_call_identity(tool_call: &OpenAiLikeToolCallDelta) -> bool {
+    if tool_call
+        .id
+        .as_ref()
+        .is_some_and(|tool_call_id| !tool_call_id.is_empty())
+    {
+        return true;
+    }
+
+    tool_call
+        .function
+        .as_ref()
+        .and_then(|function| function.name.as_ref())
+        .is_some_and(|tool_name| !tool_name.is_empty())
 }
 
 fn start_tool_call_block(
@@ -402,6 +419,7 @@ pub(crate) fn map_stop_reason(reason: &str) -> StopReason {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stream::AssistantMessageEventStream;
     use crate::types::{Api, KnownProvider, Provider};
 
     fn make_output_message() -> AssistantMessage {
@@ -425,6 +443,73 @@ mod tests {
         assert_eq!(map_stop_reason("function_call"), StopReason::ToolUse);
         assert_eq!(map_stop_reason("content_filter"), StopReason::Error);
         assert_eq!(map_stop_reason("unknown"), StopReason::Stop);
+    }
+
+    #[test]
+    fn handle_tool_calls_ignores_orphan_argument_delta_without_identity() {
+        let (_stream, mut sender) = AssistantMessageEventStream::new();
+        let mut output = make_output_message();
+        let mut current_block: Option<CurrentBlock> = None;
+
+        let orphan_delta = OpenAiLikeToolCallDelta {
+            id: None,
+            function: Some(OpenAiLikeFunctionDelta {
+                name: None,
+                arguments: Some("{\"a\": 15, \"b\": ".to_string()),
+            }),
+        };
+
+        handle_tool_calls(
+            &[orphan_delta],
+            &mut output,
+            &mut sender,
+            &mut current_block,
+        );
+
+        assert!(current_block.is_none());
+        assert!(output.content.is_empty());
+    }
+
+    #[test]
+    fn handle_tool_calls_merges_idless_continuation_into_active_tool_call() {
+        let (_stream, mut sender) = AssistantMessageEventStream::new();
+        let mut output = make_output_message();
+        let mut current_block: Option<CurrentBlock> = None;
+
+        let start_delta = OpenAiLikeToolCallDelta {
+            id: Some("call_123".to_string()),
+            function: Some(OpenAiLikeFunctionDelta {
+                name: Some("multiply".to_string()),
+                arguments: Some("{\"a\": 15, \"b\": ".to_string()),
+            }),
+        };
+
+        let continuation_delta = OpenAiLikeToolCallDelta {
+            id: None,
+            function: Some(OpenAiLikeFunctionDelta {
+                name: None,
+                arguments: Some("3}".to_string()),
+            }),
+        };
+
+        handle_tool_calls(&[start_delta], &mut output, &mut sender, &mut current_block);
+        handle_tool_calls(
+            &[continuation_delta],
+            &mut output,
+            &mut sender,
+            &mut current_block,
+        );
+        finish_current_block(&mut current_block, &mut output, &mut sender);
+
+        assert_eq!(output.content.len(), 1);
+        match &output.content[0] {
+            Content::ToolCall { inner } => {
+                assert_eq!(inner.id.as_str(), "call_123");
+                assert_eq!(inner.name, "multiply");
+                assert_eq!(inner.arguments, serde_json::json!({"a": 15, "b": 3}));
+            }
+            _ => panic!("expected tool call content"),
+        }
     }
 
     #[test]
