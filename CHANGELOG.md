@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-02-21
+
+### Fixed
+- MiniMax multi-turn streamed tool-call argument assembly no longer drops trailing deltas when chunks interleave tool calls with content/reasoning
+- Shared OpenAI-like stream block handling now safely merges id-less MiniMax continuation deltas into the active tool call and ignores orphan arg-only deltas
+
+### Added
+- Regression tests for MiniMax interleaved tool-call continuation with both text fallback and `reasoning_details` payloads
+- Shared stream parser tests for id-less continuation merge and orphan continuation ignore cases
+
 ## [0.1.5] - 2026-02-21
 
 ### Added
