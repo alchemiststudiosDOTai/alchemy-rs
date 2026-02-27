@@ -35,6 +35,37 @@ pub(crate) struct OpenAiLikeMessageOptions {
     pub system_role: SystemPromptRole,
     pub requires_tool_result_name: bool,
     pub assistant_thinking_mode: AssistantThinkingMode,
+    pub assistant_content_as_string: bool,
+    pub emit_reasoning_content_field: bool,
+    pub tool_call_arguments_as_object: bool,
+}
+
+impl OpenAiLikeMessageOptions {
+    pub(crate) fn openai_like(
+        system_role: SystemPromptRole,
+        requires_tool_result_name: bool,
+        assistant_thinking_mode: AssistantThinkingMode,
+    ) -> Self {
+        Self {
+            system_role,
+            requires_tool_result_name,
+            assistant_thinking_mode,
+            ..Self::default()
+        }
+    }
+}
+
+impl Default for OpenAiLikeMessageOptions {
+    fn default() -> Self {
+        Self {
+            system_role: SystemPromptRole::System,
+            requires_tool_result_name: false,
+            assistant_thinking_mode: AssistantThinkingMode::Omit,
+            assistant_content_as_string: false,
+            emit_reasoning_content_field: false,
+            tool_call_arguments_as_object: false,
+        }
+    }
 }
 
 pub(crate) fn convert_messages<TApi: ApiType>(
@@ -128,6 +159,8 @@ fn user_content_to_json<TApi: ApiType>(
     }
 }
 
+const ASSISTANT_CONTENT_PART_SEPARATOR: &str = "\n";
+
 fn convert_assistant_message(
     assistant: &crate::types::AssistantMessage,
     options: &OpenAiLikeMessageOptions,
@@ -136,24 +169,50 @@ fn convert_assistant_message(
         "role": "assistant",
     });
 
-    let text_parts = assistant_text_parts(assistant, options.assistant_thinking_mode);
-    if !text_parts.is_empty() {
-        message["content"] = json!(text_parts
-            .iter()
-            .map(|text| json!({ "type": "text", "text": text }))
-            .collect::<Vec<_>>());
+    if let Some(content) = assistant_content_value(assistant, options) {
+        message["content"] = content;
     }
 
-    let tool_calls = assistant_tool_calls(assistant);
+    if options.emit_reasoning_content_field {
+        if let Some(reasoning_content) = assistant_reasoning_content(assistant) {
+            message["reasoning_content"] = json!(reasoning_content);
+        }
+    }
+
+    let tool_calls = assistant_tool_calls(assistant, options.tool_call_arguments_as_object);
     if !tool_calls.is_empty() {
         message["tool_calls"] = json!(tool_calls);
     }
 
-    if message.get("content").is_none() && message.get("tool_calls").is_none() {
+    let has_content = message.get("content").is_some();
+    let has_reasoning_content = message.get("reasoning_content").is_some();
+    let has_tool_calls = message.get("tool_calls").is_some();
+
+    if !(has_content || has_reasoning_content || has_tool_calls) {
         return None;
     }
 
     Some(message)
+}
+
+fn assistant_content_value(
+    assistant: &crate::types::AssistantMessage,
+    options: &OpenAiLikeMessageOptions,
+) -> Option<serde_json::Value> {
+    let text_parts = assistant_text_parts(assistant, options.assistant_thinking_mode);
+
+    if text_parts.is_empty() {
+        return None;
+    }
+
+    if options.assistant_content_as_string {
+        return Some(json!(text_parts.join(ASSISTANT_CONTENT_PART_SEPARATOR)));
+    }
+
+    Some(json!(text_parts
+        .iter()
+        .map(|text| json!({ "type": "text", "text": text }))
+        .collect::<Vec<_>>()))
 }
 
 fn assistant_text_parts(
@@ -173,6 +232,25 @@ fn assistant_text_parts(
         .collect()
 }
 
+fn assistant_reasoning_content(assistant: &crate::types::AssistantMessage) -> Option<String> {
+    let reasoning_parts: Vec<String> = assistant
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            Content::Thinking { inner } if !inner.thinking.is_empty() => {
+                Some(inner.thinking.clone())
+            }
+            _ => None,
+        })
+        .collect();
+
+    if reasoning_parts.is_empty() {
+        return None;
+    }
+
+    Some(reasoning_parts.join(ASSISTANT_CONTENT_PART_SEPARATOR))
+}
+
 fn map_thinking_content(thinking: &str, mode: AssistantThinkingMode) -> Option<String> {
     match mode {
         AssistantThinkingMode::Omit => None,
@@ -183,19 +261,30 @@ fn map_thinking_content(thinking: &str, mode: AssistantThinkingMode) -> Option<S
     }
 }
 
-fn assistant_tool_calls(assistant: &crate::types::AssistantMessage) -> Vec<serde_json::Value> {
+fn assistant_tool_calls(
+    assistant: &crate::types::AssistantMessage,
+    tool_call_arguments_as_object: bool,
+) -> Vec<serde_json::Value> {
     assistant
         .content
         .iter()
         .filter_map(|content| match content {
-            Content::ToolCall { inner } => Some(json!({
-                "id": inner.id,
-                "type": "function",
-                "function": {
-                    "name": inner.name,
-                    "arguments": inner.arguments.to_string(),
-                }
-            })),
+            Content::ToolCall { inner } => {
+                let arguments = if tool_call_arguments_as_object {
+                    inner.arguments.clone()
+                } else {
+                    json!(inner.arguments.to_string())
+                };
+
+                Some(json!({
+                    "id": inner.id,
+                    "type": "function",
+                    "function": {
+                        "name": inner.name,
+                        "arguments": arguments,
+                    }
+                }))
+            }
             _ => None,
         })
         .collect()
@@ -311,11 +400,7 @@ mod tests {
         convert_messages(
             &model,
             &context,
-            &OpenAiLikeMessageOptions {
-                system_role: SystemPromptRole::System,
-                requires_tool_result_name: false,
-                assistant_thinking_mode: mode,
-            },
+            &OpenAiLikeMessageOptions::openai_like(SystemPromptRole::System, false, mode),
         )
     }
 
@@ -331,11 +416,11 @@ mod tests {
         let params = convert_messages(
             &model,
             &context,
-            &OpenAiLikeMessageOptions {
-                system_role: SystemPromptRole::Developer,
-                requires_tool_result_name: false,
-                assistant_thinking_mode: AssistantThinkingMode::Omit,
-            },
+            &OpenAiLikeMessageOptions::openai_like(
+                SystemPromptRole::Developer,
+                false,
+                AssistantThinkingMode::Omit,
+            ),
         );
 
         assert_eq!(params[0]["role"], "developer");
@@ -362,11 +447,11 @@ mod tests {
         let params = convert_messages(
             &model,
             &context,
-            &OpenAiLikeMessageOptions {
-                system_role: SystemPromptRole::System,
-                requires_tool_result_name: false,
-                assistant_thinking_mode: AssistantThinkingMode::Omit,
-            },
+            &OpenAiLikeMessageOptions::openai_like(
+                SystemPromptRole::System,
+                false,
+                AssistantThinkingMode::Omit,
+            ),
         );
 
         assert_eq!(params[0]["content"], serde_json::json!([]));
@@ -386,11 +471,11 @@ mod tests {
         let params = convert_messages(
             &model,
             &context,
-            &OpenAiLikeMessageOptions {
-                system_role: SystemPromptRole::System,
-                requires_tool_result_name: false,
-                assistant_thinking_mode: AssistantThinkingMode::Omit,
-            },
+            &OpenAiLikeMessageOptions::openai_like(
+                SystemPromptRole::System,
+                false,
+                AssistantThinkingMode::Omit,
+            ),
         );
 
         assert_eq!(params[0]["role"], "assistant");
@@ -411,11 +496,11 @@ mod tests {
         let params = convert_messages(
             &model,
             &context,
-            &OpenAiLikeMessageOptions {
-                system_role: SystemPromptRole::System,
-                requires_tool_result_name: false,
-                assistant_thinking_mode: AssistantThinkingMode::Omit,
-            },
+            &OpenAiLikeMessageOptions::openai_like(
+                SystemPromptRole::System,
+                false,
+                AssistantThinkingMode::Omit,
+            ),
         );
 
         assert_eq!(params, serde_json::json!([]));
@@ -435,5 +520,97 @@ mod tests {
 
         assert_eq!(params[0]["content"][0]["text"], "<think>internal</think>");
         assert_eq!(params[0]["content"][1]["text"], "answer");
+    }
+
+    #[test]
+    fn convert_messages_zai_mode_matches_canonical_assistant_replay_shape() {
+        let model = make_model(vec![InputType::Text]);
+        let context = Context {
+            system_prompt: None,
+            messages: vec![Message::Assistant(make_assistant_message(vec![
+                Content::thinking("first reason"),
+                Content::text("final answer"),
+                Content::tool_call("call_1", "get_weather", json!({"city": "Tokyo"})),
+            ]))],
+            tools: None,
+        };
+        let options = OpenAiLikeMessageOptions {
+            assistant_content_as_string: true,
+            emit_reasoning_content_field: true,
+            tool_call_arguments_as_object: false,
+            ..OpenAiLikeMessageOptions::openai_like(
+                SystemPromptRole::System,
+                false,
+                AssistantThinkingMode::Omit,
+            )
+        };
+
+        let params = convert_messages(&model, &context, &options);
+
+        assert_eq!(
+            params[0],
+            json!({
+                "role": "assistant",
+                "reasoning_content": "first reason",
+                "content": "final answer",
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "arguments": "{\"city\":\"Tokyo\"}"
+                    }
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn convert_messages_keeps_assistant_with_reasoning_field_even_without_text_content() {
+        let model = make_model(vec![InputType::Text]);
+        let context = Context {
+            system_prompt: None,
+            messages: vec![Message::Assistant(make_assistant_message(vec![
+                Content::thinking("hidden chain"),
+            ]))],
+            tools: None,
+        };
+        let options = OpenAiLikeMessageOptions {
+            emit_reasoning_content_field: true,
+            ..OpenAiLikeMessageOptions::openai_like(
+                SystemPromptRole::System,
+                false,
+                AssistantThinkingMode::Omit,
+            )
+        };
+
+        let params = convert_messages(&model, &context, &options);
+
+        assert_eq!(params[0]["role"], "assistant");
+        assert_eq!(params[0]["reasoning_content"], "hidden chain");
+        assert!(params[0].get("content").is_none());
+    }
+
+    #[test]
+    fn convert_messages_can_emit_tool_call_arguments_as_json_object() {
+        let model = make_model(vec![InputType::Text]);
+        let context = Context {
+            system_prompt: None,
+            messages: vec![Message::Assistant(make_assistant_message(vec![
+                Content::tool_call("call_2", "calculator", json!({"a": 1, "b": 2})),
+            ]))],
+            tools: None,
+        };
+        let options = OpenAiLikeMessageOptions {
+            tool_call_arguments_as_object: true,
+            ..OpenAiLikeMessageOptions::default()
+        };
+
+        let params = convert_messages(&model, &context, &options);
+
+        assert_eq!(
+            params[0]["tool_calls"][0]["function"]["arguments"],
+            json!({"a": 1, "b": 2})
+        );
     }
 }

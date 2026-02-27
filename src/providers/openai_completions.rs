@@ -14,7 +14,7 @@ use super::shared::{
 use crate::stream::{AssistantMessageEventStream, EventStreamSender};
 use crate::types::{
     Api, AssistantMessage, AssistantMessageEvent, Context, KnownProvider, MaxTokensField, Model,
-    OpenAICompletions, OpenAICompletionsCompat, Provider, ThinkingFormat,
+    OpenAICompletions, OpenAICompletionsCompat, Provider,
 };
 
 /// Options for OpenAI completions streaming.
@@ -26,6 +26,7 @@ pub struct OpenAICompletionsOptions {
     pub tool_choice: Option<ToolChoice>,
     pub reasoning_effort: Option<ReasoningEffort>,
     pub headers: Option<HashMap<String, String>>,
+    pub zai: Option<crate::types::ZaiChatCompletionsOptions>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -62,7 +63,6 @@ struct ResolvedCompat {
     requires_assistant_after_tool_result: bool,
     requires_thinking_as_text: bool,
     requires_mistral_tool_ids: bool,
-    thinking_format: ThinkingFormat,
 }
 
 impl From<(ResolvedCompat, &OpenAICompletionsCompat)> for ResolvedCompat {
@@ -93,7 +93,6 @@ impl From<(ResolvedCompat, &OpenAICompletionsCompat)> for ResolvedCompat {
             requires_mistral_tool_ids: explicit
                 .requires_mistral_tool_ids
                 .unwrap_or(detected.requires_mistral_tool_ids),
-            thinking_format: explicit.thinking_format.unwrap_or(detected.thinking_format),
         }
     }
 }
@@ -252,11 +251,11 @@ fn build_params(
         AssistantThinkingMode::Omit
     };
 
-    let message_options = OpenAiLikeMessageOptions {
+    let message_options = OpenAiLikeMessageOptions::openai_like(
         system_role,
-        requires_tool_result_name: compat.requires_tool_result_name,
+        compat.requires_tool_result_name,
         assistant_thinking_mode,
-    };
+    );
 
     params["messages"] = convert_messages(model, context, &message_options);
 
@@ -293,12 +292,8 @@ fn build_params(
 
     if model.reasoning && compat.supports_reasoning_effort {
         if let Some(reasoning_effort) = &options.reasoning_effort {
-            if compat.thinking_format == ThinkingFormat::Zai {
-                params["thinking"] = json!({ "type": "enabled" });
-            } else {
-                params["reasoning_effort"] =
-                    serde_json::to_value(reasoning_effort).unwrap_or(json!("medium"));
-            }
+            params["reasoning_effort"] =
+                serde_json::to_value(reasoning_effort).unwrap_or(json!("medium"));
         }
     }
 
@@ -310,20 +305,15 @@ fn detect_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
     let provider = &model.provider;
     let base_url = &model.base_url;
 
-    let is_zai =
-        matches!(provider, Provider::Known(KnownProvider::Zai)) || base_url.contains("api.z.ai");
-
     let is_non_standard = matches!(
         provider,
         Provider::Known(KnownProvider::Cerebras)
             | Provider::Known(KnownProvider::Xai)
             | Provider::Known(KnownProvider::Mistral)
-            | Provider::Known(KnownProvider::Zai)
     ) || base_url.contains("cerebras.ai")
         || base_url.contains("api.x.ai")
         || base_url.contains("mistral.ai")
-        || base_url.contains("chutes.ai")
-        || is_zai;
+        || base_url.contains("chutes.ai");
 
     let use_max_tokens = matches!(provider, Provider::Known(KnownProvider::Mistral))
         || base_url.contains("mistral.ai")
@@ -338,7 +328,7 @@ fn detect_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
     ResolvedCompat {
         supports_store: !is_non_standard,
         supports_developer_role: !is_non_standard,
-        supports_reasoning_effort: !is_grok && !is_zai,
+        supports_reasoning_effort: !is_grok,
         supports_usage_in_streaming: true,
         max_tokens_field: if use_max_tokens {
             MaxTokensField::MaxTokens
@@ -349,11 +339,6 @@ fn detect_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
         requires_assistant_after_tool_result: false,
         requires_thinking_as_text: is_mistral,
         requires_mistral_tool_ids: is_mistral,
-        thinking_format: if is_zai {
-            ThinkingFormat::Zai
-        } else {
-            ThinkingFormat::Openai
-        },
     }
 }
 

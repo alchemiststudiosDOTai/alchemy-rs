@@ -50,6 +50,7 @@ async fn main() {
         tool_choice: None,
         reasoning_effort: None,
         headers: None,
+        zai: None,
     };
 
     let mut stream = stream_openai_completions(&model, &context, options);

@@ -52,6 +52,7 @@ fn make_options(api_key: String) -> OpenAICompletionsOptions {
         tool_choice: Some(ToolChoice::Required),
         reasoning_effort: None,
         headers: None,
+        zai: None,
     }
 }
 

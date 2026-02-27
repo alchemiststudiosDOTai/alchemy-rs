@@ -10,6 +10,7 @@ pub enum Api {
     OpenAICompletions,
     OpenAIResponses,
     MinimaxCompletions,
+    ZaiCompletions,
     GoogleGenerativeAi,
     GoogleVertex,
 }
@@ -22,6 +23,7 @@ impl Display for Api {
             Self::OpenAICompletions => write!(f, "openai-completions"),
             Self::OpenAIResponses => write!(f, "openai-responses"),
             Self::MinimaxCompletions => write!(f, "minimax-completions"),
+            Self::ZaiCompletions => write!(f, "zai-completions"),
             Self::GoogleGenerativeAi => write!(f, "google-generative-ai"),
             Self::GoogleVertex => write!(f, "google-vertex"),
         }
@@ -38,6 +40,7 @@ impl FromStr for Api {
             "openai-completions" => Ok(Self::OpenAICompletions),
             "openai-responses" => Ok(Self::OpenAIResponses),
             "minimax-completions" => Ok(Self::MinimaxCompletions),
+            "zai-completions" => Ok(Self::ZaiCompletions),
             "google-generative-ai" => Ok(Self::GoogleGenerativeAi),
             "google-vertex" => Ok(Self::GoogleVertex),
             _ => Err(crate::Error::UnknownApi(s.to_string())),
@@ -191,5 +194,12 @@ mod tests {
         let parsed = Api::from_str("minimax-completions").expect("valid minimax API variant");
         assert_eq!(parsed, Api::MinimaxCompletions);
         assert_eq!(parsed.to_string(), "minimax-completions");
+    }
+
+    #[test]
+    fn zai_completions_api_round_trip() {
+        let parsed = Api::from_str("zai-completions").expect("valid zai API variant");
+        assert_eq!(parsed, Api::ZaiCompletions);
+        assert_eq!(parsed.to_string(), "zai-completions");
     }
 }

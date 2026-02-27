@@ -84,6 +84,17 @@ impl ApiType for MinimaxCompletions {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct ZaiCompletions;
+
+impl ApiType for ZaiCompletions {
+    type Compat = NoCompat;
+
+    fn api(&self) -> Api {
+        Api::ZaiCompletions
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct GoogleGenerativeAi;
 
 impl ApiType for GoogleGenerativeAi {
@@ -102,5 +113,16 @@ impl ApiType for GoogleVertex {
 
     fn api(&self) -> Api {
         Api::GoogleVertex
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Api, ApiType, ZaiCompletions};
+
+    #[test]
+    fn zai_completions_marker_maps_to_zai_api() {
+        let marker = ZaiCompletions;
+        assert_eq!(marker.api(), Api::ZaiCompletions);
     }
 }

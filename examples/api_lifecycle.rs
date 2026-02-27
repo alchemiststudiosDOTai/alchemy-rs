@@ -130,6 +130,7 @@ async fn main() {
         tool_choice: None,      // Optional: auto, none, required, or specific
         reasoning_effort: None, // Optional: for reasoning models
         headers: None,          // Optional: extra HTTP headers
+        zai: None,
     };
     println!("  temperature: {:?}", options.temperature);
     println!("  max_tokens:  {:?}", options.max_tokens);
