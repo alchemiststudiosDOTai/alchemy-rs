@@ -6,14 +6,14 @@ mod openai_like_runtime;
 mod stream_blocks;
 mod timestamp;
 
-pub(crate) use http::build_http_client;
+pub(crate) use http::{build_http_client, merge_headers};
 pub(crate) use openai_like_messages::{
     convert_messages, convert_tools, AssistantThinkingMode, OpenAiLikeMessageOptions,
     SystemPromptRole,
 };
 pub(crate) use openai_like_runtime::{
-    initialize_output, process_sse_stream, push_stream_done, push_stream_error,
-    send_streaming_request,
+    initialize_output, process_sse_stream, process_sse_stream_no_done, push_stream_done,
+    push_stream_error, send_streaming_request,
 };
 pub(crate) use stream_blocks::{
     finish_current_block, handle_reasoning_delta, handle_text_delta, handle_tool_calls,

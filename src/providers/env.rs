@@ -30,7 +30,9 @@ fn get_env_api_key_for_known(provider: &KnownProvider) -> Option<String> {
 
         // Standard API key providers
         KnownProvider::OpenAI => env::var("OPENAI_API_KEY").ok(),
-        KnownProvider::Google => env::var("GEMINI_API_KEY").ok(),
+        KnownProvider::Google => env::var("GOOGLE_API_KEY")
+            .or_else(|_| env::var("GEMINI_API_KEY"))
+            .ok(),
         KnownProvider::Groq => env::var("GROQ_API_KEY").ok(),
         KnownProvider::Cerebras => env::var("CEREBRAS_API_KEY").ok(),
         KnownProvider::Xai => env::var("XAI_API_KEY").ok(),
