@@ -10,9 +10,9 @@ use super::shared::{
     OpenAiLikeMessageOptions, OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta,
     SystemPromptRole,
 };
-use crate::stream::{AssistantMessageEventStream, EventStreamSender};
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEvent, Context, MinimaxCompletions, Model,
+    Api, AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream, Context,
+    EventStreamSender, MinimaxCompletions, Model,
 };
 use crate::utils::{ThinkFragment, ThinkTagParser};
 

@@ -10,9 +10,9 @@ use super::shared::{
     OpenAiLikeMessageOptions, OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta,
     SystemPromptRole,
 };
-use crate::stream::{AssistantMessageEventStream, EventStreamSender};
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEvent, Context, Model, StopReason, ZaiCompletions,
+    Api, AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream, Context,
+    EventStreamSender, Model, StopReason, ZaiCompletions,
 };
 
 const STREAM_INCLUDE_USAGE_FIELD: &str = "include_usage";

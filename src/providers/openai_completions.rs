@@ -11,10 +11,10 @@ use super::shared::{
     OpenAiLikeMessageOptions, OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta,
     SystemPromptRole,
 };
-use crate::stream::{AssistantMessageEventStream, EventStreamSender};
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEvent, Context, KnownProvider, MaxTokensField, Model,
-    OpenAICompletions, OpenAICompletionsCompat, Provider,
+    Api, AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream, Context,
+    EventStreamSender, KnownProvider, MaxTokensField, Model, OpenAICompletions,
+    OpenAICompletionsCompat, Provider,
 };
 
 /// Options for OpenAI completions streaming.

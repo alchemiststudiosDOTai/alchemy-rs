@@ -6,7 +6,9 @@ use futures::Stream;
 use tokio::sync::oneshot;
 
 use crate::error::{Error, Result};
-use crate::types::{AssistantMessage, AssistantMessageEvent};
+
+use super::event::AssistantMessageEvent;
+use super::message::AssistantMessage;
 
 /// A stream of assistant message events.
 ///
@@ -176,7 +178,7 @@ mod tests {
             message: msg.clone(),
         });
 
-        let result = stream.result().await.unwrap();
+        let result = stream.result().await.expect("stream result should succeed");
         assert_eq!(result.model, "gpt-4");
     }
 }

@@ -1,10 +1,9 @@
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
 
-use crate::stream::EventStreamSender;
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEvent, Provider, StopReason, StopReasonError,
-    StopReasonSuccess, Usage,
+    Api, AssistantMessage, AssistantMessageEvent, EventStreamSender, Provider, StopReason,
+    StopReasonError, StopReasonSuccess, Usage,
 };
 
 use super::timestamp::unix_timestamp_millis;

@@ -1,4 +1,4 @@
-.PHONY: help fmt check clippy test complexity duplicates large-files dead-code quality-full quality-quick
+.PHONY: help fmt check clippy test complexity duplicates large-files dead-code ast-rules quality-full quality-quick
 
 help: ## Show this help message
 	@echo "Alchemy - Development Commands"
@@ -9,6 +9,7 @@ help: ## Show this help message
 	@echo "  make complexity       - Run cyclomatic complexity analysis"
 	@echo "  make duplicates       - Run duplicate code detection"
 	@echo "  make dead-code        - Run dead code detection"
+	@echo "  make ast-rules        - Run ast-grep architecture boundary checks"
 	@echo "  make large-files      - Detect large files (default: 500KB)"
 	@echo ""
 	@echo "Standard Commands:"
@@ -48,6 +49,11 @@ dead-code: ## Run dead code detection
 	@echo "Checking for dead code..."
 	@cargo clippy --all-targets --all-features -- -W dead_code -W unused 2>&1 | grep -E "(dead_code|is never used|unused)" || echo "✓ No dead code detected"
 
+ast-rules: ## Run ast-grep architecture boundary checks
+	@echo "Running ast-grep architecture rules..."
+	@command -v sg >/dev/null 2>&1 || { echo "ast-grep not installed. Install from https://ast-grep.github.io"; exit 1; }
+	sg scan --config rules/sgconfig.yml src --error
+
 large-files: ## Detect large files (default: 500KB)
 	@echo "Checking for large files (>500KB)..."
 	@find src -type f -size +500k -exec ls -lh {} \; 2>/dev/null | awk '{ print $$9 ": " $$5 }' || echo "✓ No large files found"
@@ -55,5 +61,5 @@ large-files: ## Detect large files (default: 500KB)
 quality-quick: fmt clippy check ## Fast quality checks (pre-commit)
 	@echo "✓ Quick quality checks passed"
 
-quality-full: quality-quick test complexity duplicates dead-code large-files ## All quality checks
+quality-full: quality-quick test complexity duplicates dead-code ast-rules large-files ## All quality checks
 	@echo "✓ Full quality analysis complete"

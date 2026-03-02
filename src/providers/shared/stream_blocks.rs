@@ -1,7 +1,9 @@
 use serde::Deserialize;
 
-use crate::stream::EventStreamSender;
-use crate::types::{AssistantMessage, AssistantMessageEvent, Content, StopReason, ToolCall, Usage};
+use crate::types::{
+    AssistantMessage, AssistantMessageEvent, Content, EventStreamSender, StopReason, ToolCall,
+    Usage,
+};
 
 #[derive(Debug)]
 pub(crate) enum CurrentBlock {
@@ -419,8 +421,7 @@ pub(crate) fn map_stop_reason(reason: &str) -> StopReason {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stream::AssistantMessageEventStream;
-    use crate::types::{Api, KnownProvider, Provider};
+    use crate::types::{Api, AssistantMessageEventStream, KnownProvider, Provider};
 
     fn make_output_message() -> AssistantMessage {
         AssistantMessage {

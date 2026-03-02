@@ -2,6 +2,7 @@ pub mod api;
 pub mod compat;
 pub mod content;
 pub mod event;
+pub mod event_stream;
 pub mod message;
 pub mod model;
 pub mod options;
@@ -14,6 +15,7 @@ pub use api::{Api, ApiType, CompatibilityOptions, KnownProvider, NoCompat, Provi
 pub use compat::{MaxTokensField, OpenAICompletionsCompat, OpenAIResponsesCompat, ThinkingFormat};
 pub use content::{Content, ImageContent, TextContent, ThinkingContent, ToolCall};
 pub use event::{AssistantMessageEvent, StopReasonError, StopReasonSuccess};
+pub use event_stream::{AssistantMessageEventStream, EventStreamSender};
 pub use message::{
     AssistantMessage, Context, Message, ToolResultContent, ToolResultMessage, UserContent,
     UserContentBlock, UserMessage,

@@ -1,6 +1,4 @@
-mod event_stream;
-
-pub use event_stream::{AssistantMessageEventStream, EventStreamSender};
+pub use crate::types::{AssistantMessageEventStream, EventStreamSender};
 
 use crate::error::{Error, Result};
 use crate::providers::{
