@@ -25,26 +25,8 @@ if [ -n "$large_files" ]; then
 fi
 echo "✓ No large files detected"
 
-echo "=== Code Formatting ==="
-cargo fmt --all -- --check
-
-echo "=== Linting ==="
-cargo clippy --all-targets --all-features -- -D warnings
-
-echo "=== Type Checking ==="
-cargo check --all-targets --all-features
-
-echo "=== Dead Code Detection ==="
-cargo clippy --all-targets --all-features -- -W dead_code 2>&1 | grep -E "dead_code|is never used" || true
-echo "✓ Dead code check complete"
-
-echo "=== Duplicate Code Detection ==="
-if command -v polydup >/dev/null 2>&1; then
-    polydup --min-tokens 100 --similarity 0.9 src/ 2>/dev/null || true
-else
-    echo "⚠ polydup not installed. Run: cargo install polydup-cli"
-fi
-echo "✓ Duplicate check complete"
+echo "=== Harness ==="
+make harness
 
 echo ""
 echo "✓ All pre-commit checks passed"

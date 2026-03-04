@@ -1,4 +1,4 @@
-.PHONY: help fmt check clippy test complexity duplicates large-files dead-code ast-rules quality-full quality-quick
+.PHONY: help fmt check clippy test complexity duplicates large-files dead-code ast-rules harness quality-full quality-quick
 
 help: ## Show this help message
 	@echo "Alchemy - Development Commands"
@@ -11,6 +11,7 @@ help: ## Show this help message
 	@echo "  make dead-code        - Run dead code detection"
 	@echo "  make ast-rules        - Run ast-grep architecture boundary checks"
 	@echo "  make large-files      - Detect large files (default: 500KB)"
+	@echo "  make harness          - Run full commit harness with minimal output"
 	@echo ""
 	@echo "Standard Commands:"
 	@echo "  make fmt              - Format code"
@@ -57,6 +58,9 @@ ast-rules: ## Run ast-grep architecture boundary checks
 large-files: ## Detect large files (default: 500KB)
 	@echo "Checking for large files (>500KB)..."
 	@find src -type f -size +500k -exec ls -lh {} \; 2>/dev/null | awk '{ print $$9 ": " $$5 }' || echo "✓ No large files found"
+
+harness: ## Run full commit harness with minimal output
+	@./scripts/harness.sh
 
 quality-quick: fmt clippy check ## Fast quality checks (pre-commit)
 	@echo "✓ Quick quality checks passed"
