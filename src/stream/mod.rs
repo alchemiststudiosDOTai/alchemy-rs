@@ -165,9 +165,10 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn stream_dispatches_to_minimax_provider() {
-        let model = minimax_test_model("http://127.0.0.1:1/v1/chat/completions");
+    async fn assert_dispatches_to_provider<TApi>(model: Model<TApi>, expected_api: Api)
+    where
+        TApi: crate::types::ApiType,
+    {
         let context = Context::default();
         let options = Some(OpenAICompletionsOptions {
             api_key: Some("test-key".to_string()),
@@ -180,27 +181,20 @@ mod tests {
             .expect("stream should finish quickly")
             .expect("stream result should be returned");
 
-        assert_eq!(result.api, Api::MinimaxCompletions);
+        assert_eq!(result.api, expected_api);
         assert_eq!(result.stop_reason, StopReason::Error);
+    }
+
+    #[tokio::test]
+    async fn stream_dispatches_to_minimax_provider() {
+        let model = minimax_test_model("http://127.0.0.1:1/v1/chat/completions");
+        assert_dispatches_to_provider(model, Api::MinimaxCompletions).await;
     }
 
     #[tokio::test]
     async fn stream_dispatches_to_zai_provider() {
         let model = zai_test_model("http://127.0.0.1:1/api/paas/v4/chat/completions");
-        let context = Context::default();
-        let options = Some(OpenAICompletionsOptions {
-            api_key: Some("test-key".to_string()),
-            ..OpenAICompletionsOptions::default()
-        });
-
-        let stream = stream(&model, &context, options).expect("dispatch should succeed");
-        let result = timeout(Duration::from_secs(5), stream.result())
-            .await
-            .expect("stream should finish quickly")
-            .expect("stream result should be returned");
-
-        assert_eq!(result.api, Api::ZaiCompletions);
-        assert_eq!(result.stop_reason, StopReason::Error);
+        assert_dispatches_to_provider(model, Api::ZaiCompletions).await;
     }
 
     #[test]

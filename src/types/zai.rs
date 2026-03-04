@@ -55,9 +55,9 @@ pub enum ZaiThinkingType {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ZaiChatCompletionsOptions, ZaiResponseFormat, ZaiResponseFormatType, ZaiThinking,
-        ZaiThinkingType,
+    use super::ZaiChatCompletionsOptions;
+    use crate::test_helpers::{
+        populated_zai_chat_completions_options, populated_zai_chat_completions_options_json,
     };
     use serde_json::json;
 
@@ -71,47 +71,9 @@ mod tests {
 
     #[test]
     fn zai_options_serialize_with_expected_contract_shape() {
-        let options = ZaiChatCompletionsOptions {
-            do_sample: Some(true),
-            top_p: Some(0.8),
-            max_tokens: Some(4096),
-            stop: Some(["stop-here".to_string()]),
-            tool_stream: Some(true),
-            request_id: Some("request-123".to_string()),
-            user_id: Some("user-456".to_string()),
-            response_format: Some(ZaiResponseFormat {
-                kind: ZaiResponseFormatType::JsonSchema,
-                json_schema: Some(json!({"type": "object"})),
-            }),
-            thinking: Some(ZaiThinking {
-                kind: ZaiThinkingType::Enabled,
-                clear_thinking: Some(false),
-            }),
-        };
-
+        let options = populated_zai_chat_completions_options();
         let serialized = serde_json::to_value(&options).expect("serialize populated options");
 
-        assert_eq!(
-            serialized,
-            json!({
-                "do_sample": true,
-                "top_p": 0.8,
-                "max_tokens": 4096,
-                "stop": ["stop-here"],
-                "tool_stream": true,
-                "request_id": "request-123",
-                "user_id": "user-456",
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "type": "object"
-                    }
-                },
-                "thinking": {
-                    "type": "enabled",
-                    "clear_thinking": false
-                }
-            })
-        );
+        assert_eq!(serialized, populated_zai_chat_completions_options_json());
     }
 }

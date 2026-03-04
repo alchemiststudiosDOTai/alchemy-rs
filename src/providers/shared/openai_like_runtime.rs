@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
 
@@ -6,7 +8,47 @@ use crate::types::{
     StopReasonError, StopReasonSuccess, Usage,
 };
 
+use super::http::build_http_client;
+use super::stream_blocks::{finish_current_block, CurrentBlock};
 use super::timestamp::unix_timestamp_millis;
+
+pub(crate) struct OpenAiLikeRequest<'a> {
+    pub provider: &'a Provider,
+    pub base_url: &'a str,
+    pub api_key: &'a Option<String>,
+    pub model_headers: Option<&'a HashMap<String, String>>,
+    pub request_headers: Option<&'a HashMap<String, String>>,
+    pub params: &'a serde_json::Value,
+}
+
+impl<'a> OpenAiLikeRequest<'a> {
+    pub(crate) fn new(
+        provider: &'a Provider,
+        base_url: &'a str,
+        api_key: &'a Option<String>,
+        model_headers: Option<&'a HashMap<String, String>>,
+        request_headers: Option<&'a HashMap<String, String>>,
+        params: &'a serde_json::Value,
+    ) -> Self {
+        Self {
+            provider,
+            base_url,
+            api_key,
+            model_headers,
+            request_headers,
+            params,
+        }
+    }
+}
+
+pub(crate) fn require_api_key<'a>(
+    api_key: &'a Option<String>,
+    provider: &Provider,
+) -> Result<&'a str, crate::Error> {
+    api_key
+        .as_deref()
+        .ok_or_else(|| crate::Error::NoApiKey(provider.to_string()))
+}
 
 pub(crate) fn initialize_output(api: Api, provider: Provider, model: String) -> AssistantMessage {
     AssistantMessage {
@@ -40,6 +82,77 @@ pub(crate) fn push_stream_done(output: &AssistantMessage, sender: &mut EventStre
         reason: done_reason_from_stop_reason(output.stop_reason),
         message: output.clone(),
     });
+}
+
+pub(crate) async fn run_openai_like_stream<TChunk, TState, FChunk, FBeforeFinish>(
+    request: OpenAiLikeRequest<'_>,
+    output: &mut AssistantMessage,
+    sender: &mut EventStreamSender,
+    state: &mut TState,
+    mut process_chunk: FChunk,
+    mut before_finish: FBeforeFinish,
+) -> Result<(), crate::Error>
+where
+    TChunk: DeserializeOwned,
+    FChunk: FnMut(
+        TChunk,
+        &mut TState,
+        &mut AssistantMessage,
+        &mut EventStreamSender,
+        &mut Option<CurrentBlock>,
+    ),
+    FBeforeFinish: FnMut(
+        &mut TState,
+        &mut AssistantMessage,
+        &mut EventStreamSender,
+        &mut Option<CurrentBlock>,
+    ),
+{
+    let api_key = require_api_key(request.api_key, request.provider)?;
+    let client = build_http_client(api_key, request.model_headers, request.request_headers)?;
+    let response = send_streaming_request(&client, request.base_url, request.params).await?;
+
+    sender.push(AssistantMessageEvent::Start {
+        partial: output.clone(),
+    });
+
+    let mut current_block: Option<CurrentBlock> = None;
+
+    process_sse_stream::<TChunk, _>(response, |chunk| {
+        process_chunk(chunk, state, output, sender, &mut current_block);
+    })
+    .await?;
+
+    before_finish(state, output, sender, &mut current_block);
+    finish_current_block(&mut current_block, output, sender);
+    push_stream_done(output, sender);
+
+    Ok(())
+}
+
+pub(crate) async fn run_openai_like_stream_without_state<TChunk, FChunk>(
+    request: OpenAiLikeRequest<'_>,
+    output: &mut AssistantMessage,
+    sender: &mut EventStreamSender,
+    mut process_chunk: FChunk,
+) -> Result<(), crate::Error>
+where
+    TChunk: DeserializeOwned,
+    FChunk: FnMut(TChunk, &mut AssistantMessage, &mut EventStreamSender, &mut Option<CurrentBlock>),
+{
+    let mut state = ();
+
+    run_openai_like_stream::<TChunk, _, _, _>(
+        request,
+        output,
+        sender,
+        &mut state,
+        |chunk, _state, output, sender, current_block| {
+            process_chunk(chunk, output, sender, current_block);
+        },
+        |_state, _output, _sender, _current_block| {},
+    )
+    .await
 }
 
 fn done_reason_from_stop_reason(stop_reason: StopReason) -> StopReasonSuccess {
@@ -117,8 +230,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::done_reason_from_stop_reason;
-    use crate::types::{StopReason, StopReasonSuccess};
+    use super::{done_reason_from_stop_reason, require_api_key};
+    use crate::types::{KnownProvider, Provider, StopReason, StopReasonSuccess};
 
     #[test]
     fn stop_reason_maps_to_done_reason() {
@@ -137,6 +250,27 @@ mod tests {
         assert_eq!(
             done_reason_from_stop_reason(StopReason::Error),
             StopReasonSuccess::Stop
+        );
+    }
+
+    #[test]
+    fn require_api_key_returns_key_when_present() {
+        let provider = Provider::Known(KnownProvider::OpenAI);
+        let key = Some("test-key".to_string());
+
+        let resolved = require_api_key(&key, &provider).expect("api key should be present");
+        assert_eq!(resolved, "test-key");
+    }
+
+    #[test]
+    fn require_api_key_errors_when_missing() {
+        let provider = Provider::Known(KnownProvider::OpenAI);
+        let key = None;
+
+        let error = require_api_key(&key, &provider).expect_err("api key should be required");
+        assert_eq!(
+            error.to_string(),
+            "No API key provided for provider: openai"
         );
     }
 }

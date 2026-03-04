@@ -2,17 +2,18 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::openai_completions::OpenAICompletionsOptions;
+#[cfg(test)]
+use super::shared::finish_current_block;
 use super::shared::{
-    build_http_client, convert_messages, convert_tools, finish_current_block,
-    handle_reasoning_delta, handle_text_delta, handle_tool_calls, initialize_output,
-    map_stop_reason, process_sse_stream, push_stream_done, push_stream_error,
-    send_streaming_request, update_usage_from_chunk, AssistantThinkingMode, CurrentBlock,
-    OpenAiLikeMessageOptions, OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta,
-    SystemPromptRole,
+    apply_deferred_tool_calls, convert_messages, convert_tools, handle_reasoning_delta,
+    handle_text_delta, initialize_output, map_stop_reason, prepare_openai_like_chunk,
+    push_stream_error, run_openai_like_stream_without_state, AssistantThinkingMode, CurrentBlock,
+    OpenAiLikeMessageOptions, OpenAiLikeRequest, OpenAiLikeStreamChunk, OpenAiLikeToolCallDelta,
+    ReasoningDelta, SystemPromptRole,
 };
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream, Context,
-    EventStreamSender, Model, StopReason, ZaiCompletions,
+    Api, AssistantMessage, AssistantMessageEventStream, Context, EventStreamSender, Model,
+    StopReason, ZaiCompletions,
 };
 
 const STREAM_INCLUDE_USAGE_FIELD: &str = "include_usage";
@@ -63,31 +64,25 @@ async fn run_stream_inner(
     output: &mut AssistantMessage,
     sender: &mut EventStreamSender,
 ) -> Result<(), crate::Error> {
-    let api_key = options
-        .api_key
-        .as_ref()
-        .ok_or_else(|| crate::Error::NoApiKey(model.provider.to_string()))?;
-
-    let client = build_http_client(api_key, model.headers.as_ref(), options.headers.as_ref())?;
     let params = build_params(model, context, options);
+    let request = OpenAiLikeRequest::new(
+        &model.provider,
+        &model.base_url,
+        &options.api_key,
+        model.headers.as_ref(),
+        options.headers.as_ref(),
+        &params,
+    );
 
-    let response = send_streaming_request(&client, &model.base_url, &params).await?;
-
-    sender.push(AssistantMessageEvent::Start {
-        partial: output.clone(),
-    });
-
-    let mut current_block: Option<CurrentBlock> = None;
-
-    process_sse_stream::<StreamChunk, _>(response, |chunk| {
-        process_chunk(&chunk, output, sender, &mut current_block);
-    })
-    .await?;
-
-    finish_current_block(&mut current_block, output, sender);
-    push_stream_done(output, sender);
-
-    Ok(())
+    run_openai_like_stream_without_state::<StreamChunk, _>(
+        request,
+        output,
+        sender,
+        |chunk, output, sender, current_block| {
+            process_chunk(&chunk, output, sender, current_block);
+        },
+    )
+    .await
 }
 
 fn build_params(
@@ -214,29 +209,18 @@ fn process_chunk(
     sender: &mut EventStreamSender,
     current_block: &mut Option<CurrentBlock>,
 ) {
-    if let Some(usage) = &chunk.usage {
-        update_usage_from_chunk(usage, output);
-    }
-
-    let Some(choice) = chunk.choices.first() else {
+    let Some(prelude) = prepare_openai_like_chunk(
+        chunk,
+        output,
+        sender,
+        current_block,
+        map_zai_stop_reason,
+        delta_tool_calls,
+    ) else {
         return;
     };
 
-    if let Some(reason) = &choice.finish_reason {
-        output.stop_reason = map_zai_stop_reason(reason);
-    }
-
-    let Some(delta) = &choice.delta else {
-        return;
-    };
-
-    let prioritize_tool_calls = should_prioritize_tool_calls(current_block, &delta.tool_calls);
-
-    if prioritize_tool_calls {
-        if let Some(tool_calls) = &delta.tool_calls {
-            handle_tool_calls(tool_calls, output, sender, current_block);
-        }
-    }
+    let delta = prelude.delta;
 
     if let Some(content) = delta.content.as_deref() {
         handle_text_delta(content, output, sender, current_block);
@@ -246,18 +230,11 @@ fn process_chunk(
         handle_reasoning_delta(reasoning, output, sender, current_block);
     }
 
-    if !prioritize_tool_calls {
-        if let Some(tool_calls) = &delta.tool_calls {
-            handle_tool_calls(tool_calls, output, sender, current_block);
-        }
-    }
+    apply_deferred_tool_calls(prelude, output, sender, current_block);
 }
 
-fn should_prioritize_tool_calls(
-    current_block: &Option<CurrentBlock>,
-    tool_calls: &Option<Vec<OpenAiLikeToolCallDelta>>,
-) -> bool {
-    matches!(current_block, Some(CurrentBlock::ToolCall { .. })) && tool_calls.is_some()
+fn delta_tool_calls(delta: &StreamDelta) -> Option<&[OpenAiLikeToolCallDelta]> {
+    delta.tool_calls.as_deref()
 }
 
 fn extract_reasoning(delta: &StreamDelta) -> Option<ReasoningDelta<'_>> {
@@ -288,18 +265,7 @@ fn map_zai_stop_reason(reason: &str) -> StopReason {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct StreamChunk {
-    #[serde(default)]
-    choices: Vec<StreamChoice>,
-    usage: Option<OpenAiLikeStreamUsage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StreamChoice {
-    delta: Option<StreamDelta>,
-    finish_reason: Option<String>,
-}
+type StreamChunk = OpenAiLikeStreamChunk<StreamDelta>;
 
 #[derive(Debug, Deserialize)]
 struct StreamDelta {
@@ -313,15 +279,17 @@ struct StreamDelta {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::{
+        assert_streaming_final_message_shape, build_final_message_shape_sse_body,
+        populated_zai_chat_completions_options, populated_zai_chat_completions_options_json,
+        ExpectedFinalMessageShape,
+    };
     use crate::types::{
         AssistantMessageEvent, Content, InputType, KnownProvider, Message, ModelCost, Provider,
-        Usage, UserContent, UserMessage, ZaiChatCompletionsOptions, ZaiResponseFormat,
-        ZaiResponseFormatType, ZaiThinking, ZaiThinkingType,
+        Usage, UserContent, UserMessage, ZaiChatCompletionsOptions,
     };
     use futures::executor::block_on;
     use futures::StreamExt;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
 
     const TEST_BASE_URL: &str = "https://api.z.ai/api/paas/v4/chat/completions";
 
@@ -501,38 +469,22 @@ mod tests {
     fn build_params_serializes_optional_zai_fields_and_explicit_thinking() {
         let model = make_model(true);
         let context = make_context();
+        let expected = populated_zai_chat_completions_options_json();
         let options = OpenAICompletionsOptions {
-            zai: Some(ZaiChatCompletionsOptions {
-                do_sample: Some(true),
-                top_p: Some(0.75),
-                max_tokens: Some(4096),
-                stop: Some(["stop-here".to_string()]),
-                tool_stream: Some(true),
-                request_id: Some("request-1".to_string()),
-                user_id: Some("user-2".to_string()),
-                response_format: Some(ZaiResponseFormat {
-                    kind: ZaiResponseFormatType::JsonSchema,
-                    json_schema: Some(json!({"type": "object"})),
-                }),
-                thinking: Some(ZaiThinking {
-                    kind: ZaiThinkingType::Disabled,
-                    clear_thinking: Some(true),
-                }),
-            }),
+            zai: Some(populated_zai_chat_completions_options()),
             ..OpenAICompletionsOptions::default()
         };
 
         let params = build_params(&model, &context, &options);
 
-        assert_eq!(params["do_sample"], true);
-        assert_eq!(params["top_p"], 0.75);
-        assert_eq!(params["stop"], json!(["stop-here"]));
-        assert_eq!(params["tool_stream"], true);
-        assert_eq!(params["request_id"], "request-1");
-        assert_eq!(params["user_id"], "user-2");
-        assert_eq!(params["response_format"]["type"], "json_schema");
-        assert_eq!(params["thinking"]["type"], "disabled");
-        assert_eq!(params["thinking"]["clear_thinking"], true);
+        assert_eq!(params["do_sample"], expected["do_sample"]);
+        assert_eq!(params["top_p"], expected["top_p"]);
+        assert_eq!(params["stop"], expected["stop"]);
+        assert_eq!(params["tool_stream"], expected["tool_stream"]);
+        assert_eq!(params["request_id"], expected["request_id"]);
+        assert_eq!(params["user_id"], expected["user_id"]);
+        assert_eq!(params["response_format"], expected["response_format"]);
+        assert_eq!(params["thinking"], expected["thinking"]);
     }
 
     #[test]
@@ -624,60 +576,32 @@ mod tests {
         }
     }
 
-    async fn spawn_sse_server(body: String) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind test listener");
-        let address = listener.local_addr().expect("listener address");
-
-        tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.expect("accept request");
-
-            let mut request_buffer = [0_u8; 4096];
-            let _ = socket.read(&mut request_buffer).await;
-
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body,
-            );
-
-            socket
-                .write_all(response.as_bytes())
-                .await
-                .expect("write response");
-        });
-
-        format!("http://{}/api/paas/v4/chat/completions", address)
-    }
-
     #[tokio::test]
     async fn stream_zai_completions_final_message_shape() {
-        let sse_body = concat!(
-            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"reason\"}}]}\n\n",
-            "data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\n",
-            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n",
-            "data: [DONE]\n\n"
-        )
-        .to_string();
-
-        let server_url = spawn_sse_server(sse_body).await;
-
-        let mut model = make_model(true);
-        model.base_url = server_url;
+        let sse_body = build_final_message_shape_sse_body(json!({
+            "reasoning_content": "reason"
+        }));
 
         let options = OpenAICompletionsOptions {
             api_key: Some("test-key".to_string()),
             ..OpenAICompletionsOptions::default()
         };
 
-        let stream = stream_zai_completions(&model, &make_context(), options);
-        let result = stream.result().await.expect("stream result");
-
-        assert_eq!(result.api, Api::ZaiCompletions);
-        assert_eq!(result.provider, Provider::Known(KnownProvider::Zai));
-        assert_eq!(result.model, "glm-4.7");
-        assert_eq!(result.stop_reason, StopReason::Stop);
-        assert_eq!(result.usage.total_tokens, 15);
+        assert_streaming_final_message_shape(
+            make_model(true),
+            make_context(),
+            options,
+            sse_body,
+            "/api/paas/v4/chat/completions",
+            stream_zai_completions,
+            ExpectedFinalMessageShape {
+                api: Api::ZaiCompletions,
+                provider: Provider::Known(KnownProvider::Zai),
+                model: "glm-4.7",
+                stop_reason: StopReason::Stop,
+                total_tokens: 15,
+            },
+        )
+        .await;
     }
 }

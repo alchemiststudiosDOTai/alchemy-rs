@@ -4,17 +4,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::shared::{
-    build_http_client, convert_messages, convert_tools, finish_current_block,
-    handle_reasoning_delta, handle_text_delta, handle_tool_calls, initialize_output,
-    map_stop_reason, process_sse_stream, push_stream_done, push_stream_error,
-    send_streaming_request, update_usage_from_chunk, AssistantThinkingMode, CurrentBlock,
-    OpenAiLikeMessageOptions, OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta,
+    convert_messages, convert_tools, handle_reasoning_delta, handle_text_delta, handle_tool_calls,
+    initialize_output, map_stop_reason, push_stream_error, run_openai_like_stream_without_state,
+    update_usage_from_chunk, AssistantThinkingMode, CurrentBlock, OpenAiLikeMessageOptions,
+    OpenAiLikeRequest, OpenAiLikeStreamChunk, OpenAiLikeToolCallDelta, ReasoningDelta,
     SystemPromptRole,
 };
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream, Context,
-    EventStreamSender, KnownProvider, MaxTokensField, Model, OpenAICompletions,
-    OpenAICompletionsCompat, Provider,
+    Api, AssistantMessage, AssistantMessageEventStream, Context, EventStreamSender, KnownProvider,
+    MaxTokensField, Model, OpenAICompletions, OpenAICompletionsCompat, Provider,
 };
 
 /// Options for OpenAI completions streaming.
@@ -140,32 +138,26 @@ async fn run_stream_inner(
     output: &mut AssistantMessage,
     sender: &mut EventStreamSender,
 ) -> Result<(), crate::Error> {
-    let api_key = options
-        .api_key
-        .as_ref()
-        .ok_or_else(|| crate::Error::NoApiKey(model.provider.to_string()))?;
-
     let compat = resolve_compat(model);
-    let client = build_http_client(api_key, model.headers.as_ref(), options.headers.as_ref())?;
     let params = build_params(model, context, options, &compat);
+    let request = OpenAiLikeRequest::new(
+        &model.provider,
+        &model.base_url,
+        &options.api_key,
+        model.headers.as_ref(),
+        options.headers.as_ref(),
+        &params,
+    );
 
-    let response = send_streaming_request(&client, &model.base_url, &params).await?;
-
-    sender.push(AssistantMessageEvent::Start {
-        partial: output.clone(),
-    });
-
-    let mut current_block: Option<CurrentBlock> = None;
-
-    process_sse_stream::<StreamChunk, _>(response, |chunk| {
-        process_chunk(&chunk, output, sender, &mut current_block);
-    })
-    .await?;
-
-    finish_current_block(&mut current_block, output, sender);
-    push_stream_done(output, sender);
-
-    Ok(())
+    run_openai_like_stream_without_state::<StreamChunk, _>(
+        request,
+        output,
+        sender,
+        |chunk, output, sender, current_block| {
+            process_chunk(&chunk, output, sender, current_block);
+        },
+    )
+    .await
 }
 
 const REASONING_CONTENT_FIELD: &str = "reasoning_content";
@@ -352,18 +344,7 @@ fn resolve_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct StreamChunk {
-    #[serde(default)]
-    choices: Vec<StreamChoice>,
-    usage: Option<OpenAiLikeStreamUsage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StreamChoice {
-    delta: Option<StreamDelta>,
-    finish_reason: Option<String>,
-}
+type StreamChunk = OpenAiLikeStreamChunk<StreamDelta>;
 
 #[derive(Debug, Deserialize)]
 struct StreamDelta {
