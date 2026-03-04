@@ -230,6 +230,14 @@ fn process_chunk(
         return;
     };
 
+    let prioritize_tool_calls = should_prioritize_tool_calls(current_block, &delta.tool_calls);
+
+    if prioritize_tool_calls {
+        if let Some(tool_calls) = &delta.tool_calls {
+            handle_tool_calls(tool_calls, output, sender, current_block);
+        }
+    }
+
     if let Some(content) = delta.content.as_deref() {
         handle_text_delta(content, output, sender, current_block);
     }
@@ -238,9 +246,18 @@ fn process_chunk(
         handle_reasoning_delta(reasoning, output, sender, current_block);
     }
 
-    if let Some(tool_calls) = &delta.tool_calls {
-        handle_tool_calls(tool_calls, output, sender, current_block);
+    if !prioritize_tool_calls {
+        if let Some(tool_calls) = &delta.tool_calls {
+            handle_tool_calls(tool_calls, output, sender, current_block);
+        }
     }
+}
+
+fn should_prioritize_tool_calls(
+    current_block: &Option<CurrentBlock>,
+    tool_calls: &Option<Vec<OpenAiLikeToolCallDelta>>,
+) -> bool {
+    matches!(current_block, Some(CurrentBlock::ToolCall { .. })) && tool_calls.is_some()
 }
 
 fn extract_reasoning(delta: &StreamDelta) -> Option<ReasoningDelta<'_>> {
@@ -372,6 +389,74 @@ mod tests {
         (events, output)
     }
 
+    fn tool_call_start_chunk(call_id: &str) -> StreamChunk {
+        serde_json::from_value(json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": "multiply",
+                            "arguments": "{\"a\": 15, \"b\": "
+                        },
+                        "index": 0
+                    }]
+                }
+            }]
+        }))
+        .expect("valid first tool-call chunk")
+    }
+
+    fn tool_call_continuation_with_content_chunk(content: &str) -> StreamChunk {
+        serde_json::from_value(json!({
+            "choices": [{
+                "finish_reason": "tool_calls",
+                "delta": {
+                    "content": content,
+                    "tool_calls": [{
+                        "type": "function",
+                        "function": {
+                            "arguments": "3}"
+                        },
+                        "index": 0
+                    }]
+                }
+            }]
+        }))
+        .expect("valid interleaved continuation chunk")
+    }
+
+    fn tool_call_continuation_with_reasoning_chunk(reasoning_text: &str) -> StreamChunk {
+        serde_json::from_value(json!({
+            "choices": [{
+                "finish_reason": "tool_calls",
+                "delta": {
+                    "reasoning_content": reasoning_text,
+                    "tool_calls": [{
+                        "type": "function",
+                        "function": {
+                            "arguments": "3}"
+                        },
+                        "index": 0
+                    }]
+                }
+            }]
+        }))
+        .expect("valid interleaved reasoning continuation chunk")
+    }
+
+    fn assert_multiply_tool_call(content: &Content, expected_call_id: &str) {
+        match content {
+            Content::ToolCall { inner } => {
+                assert_eq!(inner.id.as_str(), expected_call_id);
+                assert_eq!(inner.name, "multiply");
+                assert_eq!(inner.arguments, json!({"a": 15, "b": 3}));
+            }
+            _ => panic!("expected tool call content"),
+        }
+    }
+
     #[test]
     fn build_params_uses_zai_message_format_and_max_tokens_precedence() {
         let model = make_model(true);
@@ -496,6 +581,46 @@ mod tests {
                 );
             }
             _ => panic!("expected thinking content second"),
+        }
+    }
+
+    #[test]
+    fn process_chunk_prioritizes_tool_call_continuations_before_content() {
+        let (_events, output) = process_chunks_for_test(vec![
+            tool_call_start_chunk("call_function_1"),
+            tool_call_continuation_with_content_chunk("tail"),
+        ]);
+
+        assert_eq!(output.stop_reason, StopReason::ToolUse);
+        assert_eq!(output.content.len(), 2);
+        assert_multiply_tool_call(&output.content[0], "call_function_1");
+
+        match &output.content[1] {
+            Content::Text { inner } => assert_eq!(inner.text, "tail"),
+            _ => panic!("expected text content"),
+        }
+    }
+
+    #[test]
+    fn process_chunk_prioritizes_tool_call_continuations_before_reasoning() {
+        let (_events, output) = process_chunks_for_test(vec![
+            tool_call_start_chunk("call_function_2"),
+            tool_call_continuation_with_reasoning_chunk("next step"),
+        ]);
+
+        assert_eq!(output.stop_reason, StopReason::ToolUse);
+        assert_eq!(output.content.len(), 2);
+        assert_multiply_tool_call(&output.content[0], "call_function_2");
+
+        match &output.content[1] {
+            Content::Thinking { inner } => {
+                assert_eq!(inner.thinking, "next step");
+                assert_eq!(
+                    inner.thinking_signature.as_deref(),
+                    Some(REASONING_CONTENT_SIGNATURE)
+                );
+            }
+            _ => panic!("expected thinking content"),
         }
     }
 
