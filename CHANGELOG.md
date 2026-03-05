@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-03-05
+
+### Changed
+- Deduplicated OpenAI-like provider runtime paths by extracting shared request/stream orchestration and chunk prelude helpers
+- Refactored MiniMax and Z.ai providers to use shared stream block handling for interleaved reasoning/content/tool-call sequences
+- Reduced duplicate test and type-mapping boilerplate while preserving provider dispatch and enum string round-trip behavior
+
 ## [0.1.6] - 2026-02-21
 
 ### Fixed
