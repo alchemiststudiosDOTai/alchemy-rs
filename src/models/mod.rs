@@ -1,6 +1,8 @@
+pub mod anthropic;
 pub mod minimax;
 pub mod zai;
 
+pub use anthropic::{claude_haiku_4_5, claude_opus_4_6, claude_sonnet_4_6};
 pub use minimax::{
     minimax_cn_m2, minimax_cn_m2_1, minimax_cn_m2_1_highspeed, minimax_cn_m2_5,
     minimax_cn_m2_5_highspeed, minimax_m2, minimax_m2_1, minimax_m2_1_highspeed, minimax_m2_5,
