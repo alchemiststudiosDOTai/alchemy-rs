@@ -6,6 +6,9 @@ pub mod transform;
 pub mod types;
 pub mod utils;
 
+#[cfg(test)]
+pub(crate) mod test_helpers;
+
 pub use error::{Error, Result};
 pub use models::{
     glm_4_32b_0414_128k, glm_4_5, glm_4_5_air, glm_4_5_airx, glm_4_5_flash, glm_4_5_x, glm_4_6,

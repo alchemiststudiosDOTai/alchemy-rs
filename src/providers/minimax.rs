@@ -2,17 +2,18 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::openai_completions::OpenAICompletionsOptions;
+#[cfg(test)]
+use super::shared::finish_current_block;
 use super::shared::{
-    build_http_client, convert_messages, convert_tools, finish_current_block,
-    handle_reasoning_delta, handle_text_delta, handle_tool_calls, initialize_output,
-    map_stop_reason, process_sse_stream, push_stream_done, push_stream_error,
-    send_streaming_request, update_usage_from_chunk, AssistantThinkingMode, CurrentBlock,
-    OpenAiLikeMessageOptions, OpenAiLikeStreamUsage, OpenAiLikeToolCallDelta, ReasoningDelta,
-    SystemPromptRole,
+    apply_deferred_tool_calls, convert_messages, convert_tools, handle_reasoning_delta,
+    handle_text_delta, initialize_output, map_stop_reason, prepare_openai_like_chunk,
+    push_stream_error, run_openai_like_stream, AssistantThinkingMode, CurrentBlock,
+    OpenAiLikeMessageOptions, OpenAiLikeRequest, OpenAiLikeStreamChunk, OpenAiLikeToolCallDelta,
+    ReasoningDelta, SystemPromptRole,
 };
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream, Context,
-    EventStreamSender, MinimaxCompletions, Model,
+    Api, AssistantMessage, AssistantMessageEventStream, Context, EventStreamSender,
+    MinimaxCompletions, Model,
 };
 use crate::utils::{ThinkFragment, ThinkTagParser};
 
@@ -70,39 +71,31 @@ async fn run_stream_inner(
     output: &mut AssistantMessage,
     sender: &mut EventStreamSender,
 ) -> Result<(), crate::Error> {
-    let api_key = options
-        .api_key
-        .as_ref()
-        .ok_or_else(|| crate::Error::NoApiKey(model.provider.to_string()))?;
-
-    let client = build_http_client(api_key, model.headers.as_ref(), options.headers.as_ref())?;
     let params = build_params(model, context, options);
+    let request = OpenAiLikeRequest {
+        provider: &model.provider,
+        base_url: &model.base_url,
+        api_key: &options.api_key,
+        model_headers: model.headers.as_ref(),
+        request_headers: options.headers.as_ref(),
+        params: &params,
+    };
 
-    let response = send_streaming_request(&client, &model.base_url, &params).await?;
-
-    sender.push(AssistantMessageEvent::Start {
-        partial: output.clone(),
-    });
-
-    let mut current_block: Option<CurrentBlock> = None;
     let mut think_tag_parser = ThinkTagParser::new();
 
-    process_sse_stream::<StreamChunk, _>(response, |chunk| {
-        process_chunk(
-            &chunk,
-            output,
-            sender,
-            &mut current_block,
-            &mut think_tag_parser,
-        );
-    })
-    .await?;
-
-    flush_think_tag_parser(&mut think_tag_parser, output, sender, &mut current_block);
-    finish_current_block(&mut current_block, output, sender);
-    push_stream_done(output, sender);
-
-    Ok(())
+    run_openai_like_stream::<StreamChunk, _, _, _>(
+        request,
+        output,
+        sender,
+        &mut think_tag_parser,
+        |chunk, parser, output, sender, current_block| {
+            process_chunk(&chunk, output, sender, current_block, parser);
+        },
+        |parser, output, sender, current_block| {
+            flush_think_tag_parser(parser, output, sender, current_block);
+        },
+    )
+    .await
 }
 
 fn build_params(
@@ -160,30 +153,18 @@ fn process_chunk(
     current_block: &mut Option<CurrentBlock>,
     think_tag_parser: &mut ThinkTagParser,
 ) {
-    if let Some(usage) = &chunk.usage {
-        update_usage_from_chunk(usage, output);
-    }
-
-    let Some(choice) = chunk.choices.first() else {
+    let Some(prelude) = prepare_openai_like_chunk(
+        chunk,
+        output,
+        sender,
+        current_block,
+        map_stop_reason,
+        delta_tool_calls,
+    ) else {
         return;
     };
 
-    if let Some(reason) = &choice.finish_reason {
-        output.stop_reason = map_stop_reason(reason);
-    }
-
-    let Some(delta) = &choice.delta else {
-        return;
-    };
-
-    let prioritize_tool_calls = should_prioritize_tool_calls(current_block, &delta.tool_calls);
-
-    if prioritize_tool_calls {
-        if let Some(tool_calls) = &delta.tool_calls {
-            handle_tool_calls(tool_calls, output, sender, current_block);
-        }
-    }
-
+    let delta = prelude.delta;
     let explicit_reasoning = emit_explicit_reasoning(delta, output, sender, current_block);
 
     if let Some(content) = delta.content.as_deref() {
@@ -194,18 +175,11 @@ fn process_chunk(
         }
     }
 
-    if !prioritize_tool_calls {
-        if let Some(tool_calls) = &delta.tool_calls {
-            handle_tool_calls(tool_calls, output, sender, current_block);
-        }
-    }
+    apply_deferred_tool_calls(prelude, output, sender, current_block);
 }
 
-fn should_prioritize_tool_calls(
-    current_block: &Option<CurrentBlock>,
-    tool_calls: &Option<Vec<OpenAiLikeToolCallDelta>>,
-) -> bool {
-    matches!(current_block, Some(CurrentBlock::ToolCall { .. })) && tool_calls.is_some()
+fn delta_tool_calls(delta: &StreamDelta) -> Option<&[OpenAiLikeToolCallDelta]> {
+    delta.tool_calls.as_deref()
 }
 
 fn emit_explicit_reasoning(
@@ -323,18 +297,7 @@ fn flush_think_tag_parser(
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct StreamChunk {
-    #[serde(default)]
-    choices: Vec<StreamChoice>,
-    usage: Option<OpenAiLikeStreamUsage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StreamChoice {
-    delta: Option<StreamDelta>,
-    finish_reason: Option<String>,
-}
+type StreamChunk = OpenAiLikeStreamChunk<StreamDelta>;
 
 #[derive(Debug, Deserialize)]
 struct StreamDelta {
@@ -359,14 +322,16 @@ struct ReasoningDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::{
+        assert_streaming_final_message_shape, build_final_message_shape_sse_body,
+        ExpectedFinalMessageShape,
+    };
     use crate::types::{
         AssistantMessageEvent, Content, InputType, KnownProvider, Message, ModelCost, Provider,
         StopReason, Usage, UserContent, UserMessage,
     };
     use futures::executor::block_on;
     use futures::StreamExt;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
 
     const TEST_BASE_URL: &str = "https://api.minimax.io/v1/chat/completions";
 
@@ -754,60 +719,32 @@ mod tests {
         assert_eq!(output.usage.total_tokens, 20);
     }
 
-    async fn spawn_sse_server(body: String) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind test listener");
-        let address = listener.local_addr().expect("listener address");
-
-        tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.expect("accept request");
-
-            let mut request_buffer = [0_u8; 4096];
-            let _ = socket.read(&mut request_buffer).await;
-
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body,
-            );
-
-            socket
-                .write_all(response.as_bytes())
-                .await
-                .expect("write response");
-        });
-
-        format!("http://{}/v1/chat/completions", address)
-    }
-
     #[tokio::test]
     async fn stream_minimax_completions_final_message_shape() {
-        let sse_body = concat!(
-            "data: {\"choices\":[{\"delta\":{\"reasoning_details\":[{\"text\":\"reason\"}]}}]}\n\n",
-            "data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\n",
-            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n",
-            "data: [DONE]\n\n"
-        )
-        .to_string();
-
-        let server_url = spawn_sse_server(sse_body).await;
-
-        let mut model = make_model(true);
-        model.base_url = server_url;
+        let sse_body = build_final_message_shape_sse_body(serde_json::json!({
+            "reasoning_details": [{"text": "reason"}]
+        }));
 
         let options = OpenAICompletionsOptions {
             api_key: Some("test-key".to_string()),
             ..OpenAICompletionsOptions::default()
         };
 
-        let stream = stream_minimax_completions(&model, &make_context(), options);
-        let result = stream.result().await.expect("stream result");
-
-        assert_eq!(result.api, Api::MinimaxCompletions);
-        assert_eq!(result.provider, Provider::Known(KnownProvider::Minimax));
-        assert_eq!(result.model, "MiniMax-M2.5");
-        assert_eq!(result.stop_reason, StopReason::Stop);
-        assert_eq!(result.usage.total_tokens, 15);
+        assert_streaming_final_message_shape(
+            make_model(true),
+            make_context(),
+            options,
+            sse_body,
+            "/v1/chat/completions",
+            stream_minimax_completions,
+            ExpectedFinalMessageShape {
+                api: Api::MinimaxCompletions,
+                provider: Provider::Known(KnownProvider::Minimax),
+                model: "MiniMax-M2.5",
+                stop_reason: StopReason::Stop,
+                total_tokens: 15,
+            },
+        )
+        .await;
     }
 }
