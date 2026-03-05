@@ -26,7 +26,7 @@ A unified LLM API abstraction layer in Rust that supports 10+ providers through 
 - **Cerebras**
 - **OpenRouter**
 
-> Current first-class streaming implementations in Rust: **OpenAI Completions** and **MiniMax Completions**. Other provider APIs are being ported incrementally.
+> Current first-class streaming implementations in Rust: **OpenAI-compatible Completions** (including **OpenRouter**), **MiniMax Completions**, and **Z.ai GLM Completions**. Other provider APIs are being ported incrementally.
 
 ## Features
 
@@ -106,12 +106,11 @@ async fn main() -> alchemy_llm::Result<()> {
 
 - **Crate:** [alchemy-llm on crates.io](https://crates.io/crates/alchemy-llm)
 - **Docs:** [docs.rs/alchemy-llm](https://docs.rs/alchemy-llm)
-- Current version: `0.1.5`
-- Release notes: [CHANGELOG.md](./CHANGELOG.md#015---2026-02-21)
+- Current version: `0.1.7`
+- Release notes: [CHANGELOG.md](./CHANGELOG.md#017---2026-03-05)
 - Highlights:
-  - Add first-class `ToolCallId` type for unified tool-call identity
-  - Add cross-provider tool-call smoke flow (OpenRouter, MiniMax, Chutes) with full typed response output
-
+  - Consolidated shared OpenAI-like request/stream runtime helpers across OpenAI-compatible, MiniMax, and Z.ai providers
+  - Deduplicated stream dispatch tests and enum string-mapping boilerplate while preserving behavior
 ## Setup
 
 1. **Clone the repository**
