@@ -8,8 +8,8 @@ cognitive-complexity-threshold = 15
 
 # Maximum lines for functions
 # Helps prevent overly long functions
-# TODO: Refactor process_chunk (161) and convert_messages (109) to get below 100
-too-many-lines-threshold = 170
+# TODO: Refactor process_chunk (161) and convert_messages (109) to get below 80
+too-many-lines-threshold = 80
 
 # Maximum number of arguments
 # Encourages using structs for complex parameter lists
