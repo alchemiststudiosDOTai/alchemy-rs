@@ -29,7 +29,7 @@ The latest published crate release adds first-class tool-call ID typing and cros
 - New canonical `ToolCallId` type (`src/types/tool_call_id.rs`)
 - `ToolCall.id` and `ToolResultMessage.tool_call_id` now use `ToolCallId`
 - Unified cross-provider smoke flow for OpenRouter + MiniMax + Chutes
-- Full typed stream/event output in `smokescripts/run_tool_call_unified_types.sh`
+- Full typed stream/event output in `scripts/run_tool_call_unified_types.sh`
 
 For release details, see [../CHANGELOG.md](../CHANGELOG.md#015---2026-02-21).
 

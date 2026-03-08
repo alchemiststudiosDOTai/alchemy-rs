@@ -143,9 +143,7 @@ async fn main() -> alchemy_llm::Result<()> {
 
 ## Live Smoke Scripts
 
-- `smokescripts/run_minimax_reasoning_split.sh`
-- `smokescripts/run_minimax_inline_think.sh`
-- `smokescripts/run_minimax_usage_chunk.sh`
-- `smokescripts/run_all_minimax.sh`
-
-See: [`smokescripts/README.md`](../../smokescripts/README.md)
+- `scripts/run_minimax_reasoning_split.sh`
+- `scripts/run_minimax_inline_think.sh`
+- `scripts/run_minimax_usage_chunk.sh`
+- `scripts/run_all_minimax.sh`
