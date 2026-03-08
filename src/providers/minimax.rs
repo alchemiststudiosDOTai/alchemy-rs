@@ -495,6 +495,58 @@ mod tests {
         output
     }
 
+    fn assert_thinking_event_sequence(events: &[AssistantMessageEvent]) {
+        assert!(matches!(
+            events[0],
+            AssistantMessageEvent::ThinkingStart { .. }
+        ));
+        assert!(matches!(
+            events[1],
+            AssistantMessageEvent::ThinkingDelta { .. }
+        ));
+        assert!(matches!(
+            events[2],
+            AssistantMessageEvent::ThinkingEnd { .. }
+        ));
+    }
+
+    fn assert_text_event_sequence(events: &[AssistantMessageEvent], start_index: usize) {
+        assert!(matches!(
+            events[start_index],
+            AssistantMessageEvent::TextStart { .. }
+        ));
+        assert!(matches!(
+            events[start_index + 1],
+            AssistantMessageEvent::TextDelta { .. }
+        ));
+        assert!(matches!(
+            events[start_index + 2],
+            AssistantMessageEvent::TextEnd { .. }
+        ));
+    }
+
+    fn assert_thinking_content(content: &Content, expected_text: &str, expected_signature: &str) {
+        match content {
+            Content::Thinking { inner } => {
+                assert_eq!(inner.thinking, expected_text);
+                assert_eq!(
+                    inner.thinking_signature.as_deref(),
+                    Some(expected_signature)
+                );
+            }
+            _ => panic!("expected thinking content"),
+        }
+    }
+
+    fn assert_text_content(content: &Content, expected_text: &str) {
+        match content {
+            Content::Text { inner } => {
+                assert_eq!(inner.text, expected_text);
+            }
+            _ => panic!("expected text content"),
+        }
+    }
+
     #[test]
     fn build_params_for_reasoning_model_uses_minimax_semantics() {
         let model = make_model(true);
@@ -587,29 +639,8 @@ mod tests {
 
         let (events, output) = process_chunks_for_test(vec![chunk]);
 
-        assert!(matches!(
-            events[0],
-            AssistantMessageEvent::ThinkingStart { .. }
-        ));
-        assert!(matches!(
-            events[1],
-            AssistantMessageEvent::ThinkingDelta { .. }
-        ));
-        assert!(matches!(
-            events[2],
-            AssistantMessageEvent::ThinkingEnd { .. }
-        ));
-
-        match &output.content[0] {
-            crate::types::Content::Thinking { inner } => {
-                assert_eq!(inner.thinking, "step one");
-                assert_eq!(
-                    inner.thinking_signature.as_deref(),
-                    Some(REASONING_DETAILS_SIGNATURE)
-                );
-            }
-            _ => panic!("expected thinking content"),
-        }
+        assert_thinking_event_sequence(&events);
+        assert_thinking_content(&output.content[0], "step one", REASONING_DETAILS_SIGNATURE);
     }
 
     #[test]
@@ -625,39 +656,12 @@ mod tests {
 
         let (events, output) = process_chunks_for_test(vec![chunk]);
 
-        assert!(matches!(
-            events[0],
-            AssistantMessageEvent::ThinkingStart { .. }
-        ));
-        assert!(matches!(
-            events[1],
-            AssistantMessageEvent::ThinkingDelta { .. }
-        ));
-        assert!(matches!(
-            events[2],
-            AssistantMessageEvent::ThinkingEnd { .. }
-        ));
-        assert!(matches!(events[3], AssistantMessageEvent::TextStart { .. }));
-        assert!(matches!(events[4], AssistantMessageEvent::TextDelta { .. }));
-        assert!(matches!(events[5], AssistantMessageEvent::TextEnd { .. }));
+        assert_thinking_event_sequence(&events);
+        assert_text_event_sequence(&events, 3);
 
         assert_eq!(output.content.len(), 2);
-        match &output.content[0] {
-            crate::types::Content::Thinking { inner } => {
-                assert_eq!(inner.thinking, "reason");
-                assert_eq!(
-                    inner.thinking_signature.as_deref(),
-                    Some(THINK_TAG_SIGNATURE)
-                );
-            }
-            _ => panic!("expected thinking content"),
-        }
-        match &output.content[1] {
-            crate::types::Content::Text { inner } => {
-                assert_eq!(inner.text, "answer");
-            }
-            _ => panic!("expected text content"),
-        }
+        assert_thinking_content(&output.content[0], "reason", THINK_TAG_SIGNATURE);
+        assert_text_content(&output.content[1], "answer");
     }
 
     #[test]
