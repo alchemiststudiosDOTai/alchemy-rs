@@ -3,7 +3,7 @@ summary: "Public API surface with crate modules, provider entry points, model co
 read_when:
   - You want to understand what `alchemy_llm` exports from `src/lib.rs`
   - You need the correct import path for stream functions and core types
-  - You want to discover built-in MiniMax model constructors
+  - You want to discover built-in MiniMax and z.ai model constructors
 ---
 
 # Public API (`src/lib.rs`)
@@ -36,9 +36,10 @@ pub use error::{Error, Result};
 
 ```rust
 pub use models::{
-    minimax_cn_m2, minimax_cn_m2_1, minimax_cn_m2_1_highspeed, minimax_cn_m2_5,
-    minimax_cn_m2_5_highspeed, minimax_m2, minimax_m2_1, minimax_m2_1_highspeed,
-    minimax_m2_5, minimax_m2_5_highspeed,
+    glm_4_32b_0414_128k, glm_4_5, glm_4_5_air, glm_4_5_airx, glm_4_5_flash, glm_4_5_x,
+    glm_4_6, glm_4_7, glm_4_7_flash, glm_4_7_flashx, glm_5, minimax_cn_m2, minimax_cn_m2_1,
+    minimax_cn_m2_1_highspeed, minimax_cn_m2_5, minimax_cn_m2_5_highspeed, minimax_m2,
+    minimax_m2_1, minimax_m2_1_highspeed, minimax_m2_5, minimax_m2_5_highspeed,
 };
 ```
 
@@ -51,6 +52,18 @@ pub use providers::{
     stream_openai_completions,
     OpenAICompletionsOptions,
 };
+```
+
+`src/providers/mod.rs` also exports z.ai-specific streaming:
+
+```rust
+pub use zai::stream_zai_completions;
+```
+
+Use it via module path:
+
+```rust
+use alchemy_llm::providers::stream_zai_completions;
 ```
 
 ### Stream Entry Points
@@ -123,6 +136,7 @@ async fn main() -> alchemy_llm::Result<()> {
 ## Notes
 
 - `stream()` resolves API keys from options first, then environment variables via `get_env_api_key()`.
+- `stream()` dispatches first-class paths for `Api::OpenAICompletions`, `Api::MinimaxCompletions`, and `Api::ZaiCompletions`.
 - `complete()` is a convenience wrapper around `stream()` that returns the final `AssistantMessage`.
 - `types::*` contains the canonical cross-provider event/message contracts used by all providers.
 - Tool-call identity is modeled via `types::ToolCallId` and is shared by both `ToolCall.id` and `ToolResultMessage.tool_call_id`.

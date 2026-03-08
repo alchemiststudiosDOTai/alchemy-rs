@@ -17,20 +17,18 @@ read_when:
 ## Provider Guides
 
 - [providers/minimax.md](./providers/minimax.md) - First-class MiniMax provider (global + CN)
+- [providers/zai.md](./providers/zai.md) - First-class z.ai GLM provider
 
 ## Utilities
 
 - [utils/transform.md](./utils/transform.md) - Cross-provider conversation transformation
 
-## Latest Release (0.1.5)
+## Latest Release (0.1.7)
 
-The latest published crate release adds first-class tool-call ID typing and cross-provider smoke coverage:
+The latest published crate release focuses on shared OpenAI-like runtime consolidation:
 
-- New canonical `ToolCallId` type (`src/types/tool_call_id.rs`)
-- `ToolCall.id` and `ToolResultMessage.tool_call_id` now use `ToolCallId`
-- Unified cross-provider smoke flow for OpenRouter + MiniMax + Chutes
-- Full typed stream/event output in `scripts/run_tool_call_unified_types.sh`
+- Deduplicated request/stream orchestration helpers across OpenAI-compatible, MiniMax, and z.ai providers
+- Refactored shared stream block handling for interleaved reasoning/content/tool-call sequences
+- Reduced duplicate test and enum string-mapping boilerplate while preserving behavior
 
-For release details, see [../CHANGELOG.md](../CHANGELOG.md#015---2026-02-21).
-
-For MiniMax-specific documentation from the previous release train, see [providers/minimax.md](./providers/minimax.md).
+For release details, see [../CHANGELOG.md](../CHANGELOG.md#017---2026-03-05).

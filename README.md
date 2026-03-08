@@ -25,8 +25,9 @@ A unified LLM API abstraction layer in Rust that supports 10+ providers through 
 - **Groq**
 - **Cerebras**
 - **OpenRouter**
+- **z.ai** (GLM)
 
-> Current first-class streaming implementations in Rust: **OpenAI-compatible Completions** (including **OpenRouter**), **MiniMax Completions**, and **Z.ai GLM Completions**. Other provider APIs are being ported incrementally.
+> Current first-class streaming implementations in Rust: **OpenAI-compatible Completions** (including **OpenRouter**), **MiniMax Completions**, and **z.ai GLM Completions**. Other provider APIs are being ported incrementally.
 
 ## Features
 
@@ -109,7 +110,7 @@ async fn main() -> alchemy_llm::Result<()> {
 - Current version: `0.1.7`
 - Release notes: [CHANGELOG.md](./CHANGELOG.md#017---2026-03-05)
 - Highlights:
-  - Consolidated shared OpenAI-like request/stream runtime helpers across OpenAI-compatible, MiniMax, and Z.ai providers
+  - Consolidated shared OpenAI-like request/stream runtime helpers across OpenAI-compatible, MiniMax, and z.ai providers
   - Deduplicated stream dispatch tests and enum string-mapping boilerplate while preserving behavior
 ## Setup
 
@@ -150,11 +151,15 @@ async fn main() -> alchemy_llm::Result<()> {
 | `minimax_live_reasoning_split` | Live MiniMax stream with `reasoning_split` enabled |
 | `minimax_live_inline_think` | Live MiniMax stream exercising `<think>` fallback parsing |
 | `minimax_live_usage_chunk` | Live MiniMax final message + usage summary |
+| `zai_glm_simple_chat` | Live z.ai GLM chat with thinking/text event output |
+| `zai_glm_tool_call_smoke` | Live z.ai GLM tool-call smoke for unified tool events |
+| `tool_call_unified_types_smoke` | Cross-provider typed tool-call stream/output smoke |
 
 ## Documentation
 
 - [docs/README.md](./docs/README.md) - Documentation index
 - [docs/providers/minimax.md](./docs/providers/minimax.md) - MiniMax provider guide
+- [docs/providers/zai.md](./docs/providers/zai.md) - z.ai GLM provider guide
 - [docs/api/lib.md](./docs/api/lib.md) - Public API surface
 - [docs/utils/transform.md](./docs/utils/transform.md) - Message transformation guide
 
@@ -171,10 +176,11 @@ Pre-commit hooks automatically run:
 
 Run all quality checks:
 ```bash
-make quality-full     # All checks including complexity and duplicates
+make quality-full     # All checks including complexity, duplicates, and ast-rules
 make quality-quick    # Fast checks (fmt, clippy, check)
 make complexity       # Cyclomatic complexity analysis
 make duplicates       # Duplicate code detection
+make ast-rules        # Ast-grep architecture boundary checks
 ```
 
 Or run individually:
@@ -182,11 +188,13 @@ Or run individually:
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo check --all-targets --all-features
+make ast-rules
 ```
 
 **Tools used:**
 - **Clippy** - Cognitive complexity warnings (threshold: 20)
 - **polydup** - Duplicate code detection (install: `cargo install polydup-cli`)
+- **ast-grep (`sg`)** - Architecture boundary checks (`make ast-rules`)
 
 ## License
 

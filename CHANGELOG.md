@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- First-class z.ai GLM provider integration via `Api::ZaiCompletions` and `stream_zai_completions`
+- Built-in z.ai GLM model constructors (`glm_5`, `glm_4_7`, `glm_4_5_*`, `glm_4_32b_0414_128k`)
+- New z.ai examples: `examples/zai_glm_simple_chat.rs` and `examples/zai_glm_tool_call_smoke.rs`
+- Ast-grep architecture boundary checks under `rules/` with `make ast-rules`
+
+### Changed
+- Event stream primitives (`AssistantMessageEventStream`, `EventStreamSender`) are now defined in `src/types/event_stream.rs` and re-exported from `types`
+
 ## [0.1.7] - 2026-03-05
 
 ### Changed
