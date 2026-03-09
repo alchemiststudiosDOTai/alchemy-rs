@@ -1,0 +1,11 @@
+id: docs-frontmatter
+language: html
+severity: error
+message: Docs files must start with summary/status/last_verified frontmatter.
+files:
+  - docs/**/*.md
+rule:
+  all:
+    - kind: document
+    - not:
+        regex: '(?s)^---\nsummary: "[^\n"]+"\nstatus: (current|draft|needs review|generated)\nlast_verified: \d{4}-\d{2}-\d{2}\n---\n'
