@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- First-class z.ai GLM provider integration via `Api::ZaiCompletions` and `stream_zai_completions`
+- Built-in z.ai GLM model constructors (`glm_5`, `glm_4_7`, `glm_4_5_*`, `glm_4_32b_0414_128k`)
+- New z.ai examples: `examples/zai_glm_simple_chat.rs` and `examples/zai_glm_tool_call_smoke.rs`
+- Ast-grep architecture boundary checks under `rules/` with `make ast-rules`
+
+### Changed
+- Event stream primitives (`AssistantMessageEventStream`, `EventStreamSender`) are now defined in `src/types/event_stream.rs` and re-exported from `types`
+
 ## [0.1.7] - 2026-03-05
 
 ### Changed
@@ -28,7 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - First-class `ToolCallId` type in `types`, with serde-transparent serialization and public export
 - Cross-provider unified tool-call smoke example: `examples/tool_call_unified_types_smoke.rs`
-- Cross-provider smoke runner: `smokescripts/run_tool_call_unified_types.sh`
+- Cross-provider smoke runner: `scripts/run_tool_call_unified_types.sh`
 
 ### Changed
 - `ToolCall.id` now uses `ToolCallId` instead of raw `String`

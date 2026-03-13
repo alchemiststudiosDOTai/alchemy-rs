@@ -1,36 +1,24 @@
 ---
-summary: "Documentation index for Alchemy crate guides, provider docs, and API references"
+summary: "Documentation index for provider architecture and future crate guides"
 read_when:
-  - You need a starting point for project documentation
-  - You want to find provider-specific usage guides
-  - You want to understand the latest documented feature set
+  - You want the starting point for project documentation
+  - You are adding a new provider implementation
+  - You need the unified thinking/replay contract
 ---
 
 # Alchemy Documentation Index
 
 ## Start Here
 
-- [../README.md](../README.md) - Project overview, installation, and quick start
-- [api/lib.md](./api/lib.md) - Public API exports from `src/lib.rs`
-- [api/error.md](./api/error.md) - Error and `Result` contract
+- [providers/architecture.md](./providers/architecture.md) - Provider implementation contract for unified thinking, replay fidelity, and stream normalization
 
-## Provider Guides
+## Notes
 
-- [providers/minimax.md](./providers/minimax.md) - First-class MiniMax provider (global + CN)
+This docs tree is being rebuilt incrementally on `main`.
 
-## Utilities
+The provider architecture document is the source of truth for how new providers should:
 
-- [utils/transform.md](./utils/transform.md) - Cross-provider conversation transformation
-
-## Latest Release (0.1.5)
-
-The latest published crate release adds first-class tool-call ID typing and cross-provider smoke coverage:
-
-- New canonical `ToolCallId` type (`src/types/tool_call_id.rs`)
-- `ToolCall.id` and `ToolResultMessage.tool_call_id` now use `ToolCallId`
-- Unified cross-provider smoke flow for OpenRouter + MiniMax + Chutes
-- Full typed stream/event output in `smokescripts/run_tool_call_unified_types.sh`
-
-For release details, see [../CHANGELOG.md](../CHANGELOG.md#015---2026-02-21).
-
-For MiniMax-specific documentation from the previous release train, see [providers/minimax.md](./providers/minimax.md).
+- normalize reasoning into `Content::Thinking`
+- preserve same-provider replay fidelity
+- use shared stream block helpers
+- handle provider-native thought signatures when required
