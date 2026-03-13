@@ -152,8 +152,8 @@ Because Featherless exposes a dynamic catalog, you should treat those limits as 
 
 - **Crate:** [alchemy-llm on crates.io](https://crates.io/crates/alchemy-llm)
 - **Docs:** [docs.rs/alchemy-llm](https://docs.rs/alchemy-llm)
-- Current version: `0.1.7`
-- Release notes: [CHANGELOG.md](./CHANGELOG.md#017---2026-03-05)
+- Current version: `0.1.8`
+- Release notes: [CHANGELOG.md](./CHANGELOG.md#018---2026-03-13)
 - Highlights:
   - Consolidated shared OpenAI-like request/stream runtime helpers across OpenAI-compatible, MiniMax, and z.ai providers
   - Deduplicated stream dispatch tests and enum string-mapping boilerplate while preserving behavior
