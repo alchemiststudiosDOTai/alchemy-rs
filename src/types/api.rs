@@ -64,6 +64,7 @@ impl_str_mapping!(
 pub enum KnownProvider {
     AmazonBedrock,
     Anthropic,
+    Featherless,
     Google,
     GoogleVertex,
     OpenAI,
@@ -84,6 +85,7 @@ impl_str_mapping!(
     {
         AmazonBedrock => "amazon-bedrock",
         Anthropic => "anthropic",
+        Featherless => "featherless",
         Google => "google",
         GoogleVertex => "google-vertex",
         OpenAI => "openai",
@@ -158,7 +160,7 @@ impl CompatibilityOptions for NoCompat {
 
 #[cfg(test)]
 mod tests {
-    use super::Api;
+    use super::{Api, KnownProvider};
     use std::str::FromStr;
 
     #[test]
@@ -173,5 +175,13 @@ mod tests {
         let parsed = Api::from_str("zai-completions").expect("valid zai API variant");
         assert_eq!(parsed, Api::ZaiCompletions);
         assert_eq!(parsed.to_string(), "zai-completions");
+    }
+
+    #[test]
+    fn featherless_provider_round_trip() {
+        let parsed =
+            KnownProvider::from_str("featherless").expect("valid featherless provider variant");
+        assert_eq!(parsed, KnownProvider::Featherless);
+        assert_eq!(parsed.to_string(), "featherless");
     }
 }

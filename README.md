@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/alchemy-llm/badge.svg)](https://docs.rs/alchemy-llm)
 [![License: MIT](https://img.shields.io/crates/l/alchemy-llm.svg)](https://opensource.org/licenses/MIT)
 
-A unified LLM API abstraction layer in Rust that supports 10+ providers through a consistent interface.
+A unified LLM API abstraction layer in Rust that supports 13+ providers through a consistent interface.
 
 > **Warning:** This project is in early development (v0.1.x). APIs may change without notice. Not recommended for production use yet.
 
@@ -16,6 +16,7 @@ A unified LLM API abstraction layer in Rust that supports 10+ providers through 
 
 - **Anthropic** (Claude)
 - **OpenAI** (GPT-4, GPT-3.5)
+- **Featherless** (OpenAI-compatible catalog provider)
 - **Google** (Gemini)
 - **AWS Bedrock**
 - **Mistral**
@@ -27,7 +28,7 @@ A unified LLM API abstraction layer in Rust that supports 10+ providers through 
 - **OpenRouter**
 - **z.ai** (GLM)
 
-> Current first-class streaming implementations in Rust: **OpenAI-compatible Completions** (including **OpenRouter**), **MiniMax Completions**, and **z.ai GLM Completions**. Other provider APIs are being ported incrementally.
+> Current first-class streaming implementations in Rust: **OpenAI-compatible Completions** (including **OpenAI**, **OpenRouter**, and **Featherless**), **MiniMax Completions**, and **z.ai GLM Completions**. Other provider APIs are being ported incrementally.
 
 ## Features
 
@@ -103,6 +104,33 @@ async fn main() -> alchemy_llm::Result<()> {
 }
 ```
 
+### Featherless Quick Example
+
+Featherless is exposed as a first-class provider in the same abstraction layer while reusing the shared OpenAI-compatible runtime underneath.
+
+```rust
+use alchemy_llm::{featherless_model, stream};
+use alchemy_llm::types::{Context, Message, UserContent, UserMessage};
+
+#[tokio::main]
+async fn main() -> alchemy_llm::Result<()> {
+    let model = featherless_model("moonshotai/Kimi-K2.5");
+    let context = Context {
+        system_prompt: None,
+        messages: vec![Message::User(UserMessage {
+            content: UserContent::Text("Hello from Featherless".to_string()),
+            timestamp: 0,
+        })],
+        tools: None,
+    };
+
+    let _stream = stream(&model, &context, None)?;
+    Ok(())
+}
+```
+
+Set `FEATHERLESS_API_KEY` in your environment. If you have model-specific limits from `GET /v1/models`, you can override the returned model metadata before calling `stream(...)`.
+
 ## Latest Release
 
 - **Crate:** [alchemy-llm on crates.io](https://crates.io/crates/alchemy-llm)
@@ -159,6 +187,7 @@ async fn main() -> alchemy_llm::Result<()> {
 
 - [docs/README.md](./docs/README.md) - Documentation index
 - [docs/providers/architecture.md](./docs/providers/architecture.md) - Provider architecture contract for unified thinking, replay fidelity, and stream normalization
+- [docs/providers/featherless.md](./docs/providers/featherless.md) - Featherless as a first-class provider on the shared OpenAI-compatible path
 
 ## Development
 
