@@ -2,11 +2,12 @@ pub use crate::types::{AssistantMessageEventStream, EventStreamSender};
 
 use crate::error::{Error, Result};
 use crate::providers::{
-    get_env_api_key, stream_minimax_completions, stream_openai_completions, stream_zai_completions,
-    OpenAICompletionsOptions,
+    get_env_api_key, stream_anthropic_messages, stream_minimax_completions,
+    stream_openai_completions, stream_zai_completions, OpenAICompletionsOptions,
 };
 use crate::types::{
-    Api, AssistantMessage, Context, MinimaxCompletions, Model, OpenAICompletions, ZaiCompletions,
+    AnthropicMessages, Api, AssistantMessage, Context, MinimaxCompletions, Model,
+    OpenAICompletions, ZaiCompletions,
 };
 
 /// Stream a completion from an OpenAI-compatible model.
@@ -78,9 +79,15 @@ where
             let zai_model = unsafe { &*model_ptr };
             Ok(stream_zai_completions(zai_model, context, resolved_options))
         }
-        Api::AnthropicMessages => Err(Error::InvalidResponse(
-            "Anthropic provider not yet implemented".to_string(),
-        )),
+        Api::AnthropicMessages => {
+            let model_ptr = model as *const Model<TApi> as *const Model<AnthropicMessages>;
+            let anthropic_model = unsafe { &*model_ptr };
+            Ok(stream_anthropic_messages(
+                anthropic_model,
+                context,
+                resolved_options,
+            ))
+        }
         Api::BedrockConverseStream => Err(Error::InvalidResponse(
             "Bedrock provider not yet implemented".to_string(),
         )),
@@ -217,6 +224,34 @@ mod tests {
     async fn stream_dispatches_to_zai_provider() {
         let model = zai_test_model("http://127.0.0.1:1/api/paas/v4/chat/completions");
         assert_dispatches_to_provider(model, Api::ZaiCompletions).await;
+    }
+
+    fn anthropic_test_model(base_url: &str) -> Model<AnthropicMessages> {
+        Model {
+            id: "claude-sonnet-4-6".to_string(),
+            name: "Claude Sonnet 4.6".to_string(),
+            api: AnthropicMessages,
+            provider: Provider::Known(KnownProvider::Anthropic),
+            base_url: base_url.to_string(),
+            reasoning: true,
+            input: vec![InputType::Text, InputType::Image],
+            cost: ModelCost {
+                input: 0.003,
+                output: 0.015,
+                cache_read: 0.0003,
+                cache_write: 0.00375,
+            },
+            context_window: 200_000,
+            max_tokens: 64_000,
+            headers: None,
+            compat: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_dispatches_to_anthropic_provider() {
+        let model = anthropic_test_model("http://127.0.0.1:1");
+        assert_dispatches_to_provider(model, Api::AnthropicMessages).await;
     }
 
     #[tokio::test]
