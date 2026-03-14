@@ -226,6 +226,34 @@ mod tests {
         assert_dispatches_to_provider(model, Api::ZaiCompletions).await;
     }
 
+    fn anthropic_test_model(base_url: &str) -> Model<AnthropicMessages> {
+        Model {
+            id: "claude-sonnet-4-6".to_string(),
+            name: "Claude Sonnet 4.6".to_string(),
+            api: AnthropicMessages,
+            provider: Provider::Known(KnownProvider::Anthropic),
+            base_url: base_url.to_string(),
+            reasoning: true,
+            input: vec![InputType::Text, InputType::Image],
+            cost: ModelCost {
+                input: 0.003,
+                output: 0.015,
+                cache_read: 0.0003,
+                cache_write: 0.00375,
+            },
+            context_window: 200_000,
+            max_tokens: 64_000,
+            headers: None,
+            compat: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_dispatches_to_anthropic_provider() {
+        let model = anthropic_test_model("http://127.0.0.1:1");
+        assert_dispatches_to_provider(model, Api::AnthropicMessages).await;
+    }
+
     #[tokio::test]
     async fn stream_dispatches_featherless_through_openai_completions_provider() {
         let model = featherless_test_model("http://127.0.0.1:1/v1/chat/completions");

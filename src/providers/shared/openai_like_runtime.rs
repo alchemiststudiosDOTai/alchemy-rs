@@ -258,6 +258,10 @@ where
             }
 
             if let Some(data) = line.strip_prefix("data: ") {
+                let data = data.trim();
+                if data == "[DONE]" {
+                    break;
+                }
                 if let Ok(parsed) = serde_json::from_str::<TChunk>(data) {
                     on_chunk(current_event_type.clone(), parsed);
                 }

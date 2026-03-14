@@ -152,10 +152,13 @@ fn build_params(
         params["tools"] = json!(defs);
     }
     if model.reasoning {
-        params["thinking"] = json!({
-            "type": "enabled",
-            "budget_tokens": max_tokens.saturating_sub(100)
-        });
+        let budget = max_tokens.saturating_sub(100);
+        if budget >= 1024 {
+            params["thinking"] = json!({
+                "type": "enabled",
+                "budget_tokens": budget
+            });
+        }
     }
 
     params
@@ -169,11 +172,21 @@ fn convert_messages(model: &Model<AnthropicMessages>, context: &Context) -> Vec<
             (!content.is_empty()).then(|| json!({"role": "assistant", "content": content}))
         }
         Message::ToolResult(r) => {
-            let text = r.content.iter().filter_map(|c| match c {
-                ToolResultContent::Text(t) => Some(t.text.clone()),
-                ToolResultContent::Image(_) => None,
-            }).collect::<Vec<_>>().join("\n");
-            Some(json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": r.tool_call_id.as_str(), "content": text, "is_error": r.is_error}]}))
+            let blocks: Vec<serde_json::Value> = r.content.iter().map(|c| match c {
+                ToolResultContent::Text(t) => json!({"type": "text", "text": t.text}),
+                ToolResultContent::Image(img) => json!({
+                    "type": "image", "source": {"type": "base64", "media_type": img.mime_type, "data": img.to_base64()}
+                }),
+            }).collect();
+            let content = if blocks.len() == 1 && matches!(&r.content[0], ToolResultContent::Text(_)) {
+                json!(r.content.iter().filter_map(|c| match c {
+                    ToolResultContent::Text(t) => Some(t.text.clone()),
+                    _ => None,
+                }).collect::<Vec<_>>().join("\n"))
+            } else {
+                json!(blocks)
+            };
+            Some(json!({"role": "user", "content": [{"type": "tool_result", "tool_use_id": r.tool_call_id.as_str(), "content": content, "is_error": r.is_error}]}))
         }
     }).collect()
 }
@@ -535,11 +548,17 @@ mod tests {
         )
         .unwrap();
         let stop: SseEvent = serde_json::from_value(json!({})).unwrap();
-        let (_events, output) = run_events(vec![
+        let (events, output) = run_events(vec![
             ("content_block_start", start),
             ("content_block_delta", delta),
             ("content_block_stop", stop),
         ]);
+
+        assert!(matches!(&events[0], AssistantMessageEvent::ToolCallStart { .. }));
+        assert!(
+            matches!(&events[1], AssistantMessageEvent::ToolCallDelta { delta, .. } if delta == "{\"x\":1}")
+        );
+        assert!(matches!(&events[2], AssistantMessageEvent::ToolCallEnd { .. }));
         assert!(
             matches!(&output.content[0], Content::ToolCall { inner } if inner.id.as_str() == "toolu_1" && inner.name == "calc")
         );
