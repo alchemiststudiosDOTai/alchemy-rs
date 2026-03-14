@@ -554,11 +554,17 @@ mod tests {
             ("content_block_stop", stop),
         ]);
 
-        assert!(matches!(&events[0], AssistantMessageEvent::ToolCallStart { .. }));
+        assert!(matches!(
+            &events[0],
+            AssistantMessageEvent::ToolCallStart { .. }
+        ));
         assert!(
             matches!(&events[1], AssistantMessageEvent::ToolCallDelta { delta, .. } if delta == "{\"x\":1}")
         );
-        assert!(matches!(&events[2], AssistantMessageEvent::ToolCallEnd { .. }));
+        assert!(matches!(
+            &events[2],
+            AssistantMessageEvent::ToolCallEnd { .. }
+        ));
         assert!(
             matches!(&output.content[0], Content::ToolCall { inner } if inner.id.as_str() == "toolu_1" && inner.name == "calc")
         );
