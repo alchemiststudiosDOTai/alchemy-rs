@@ -228,10 +228,6 @@ where
     Ok(())
 }
 
-/// SSE stream processor that passes `event:` type alongside each `data:` payload.
-///
-/// For APIs that use named SSE events where the event type determines
-/// how to interpret the data payload.
 pub(crate) async fn process_sse_stream_with_event<TChunk, F>(
     response: reqwest::Response,
     mut on_chunk: F,
