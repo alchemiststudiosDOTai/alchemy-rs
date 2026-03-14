@@ -186,7 +186,30 @@ pub(crate) async fn send_streaming_request(
 
 pub(crate) async fn process_sse_stream<TChunk, F>(
     response: reqwest::Response,
+    on_chunk: F,
+) -> Result<(), crate::Error>
+where
+    TChunk: DeserializeOwned,
+    F: FnMut(TChunk),
+{
+    process_sse_stream_inner(response, on_chunk, true).await
+}
+
+pub(crate) async fn process_sse_stream_no_done<TChunk, F>(
+    response: reqwest::Response,
+    on_chunk: F,
+) -> Result<(), crate::Error>
+where
+    TChunk: DeserializeOwned,
+    F: FnMut(TChunk),
+{
+    process_sse_stream_inner(response, on_chunk, false).await
+}
+
+async fn process_sse_stream_inner<TChunk, F>(
+    response: reqwest::Response,
     mut on_chunk: F,
+    expect_done: bool,
 ) -> Result<(), crate::Error>
 where
     TChunk: DeserializeOwned,
@@ -209,7 +232,7 @@ where
             }
 
             if let Some(data) = line.strip_prefix("data: ") {
-                if data == "[DONE]" {
+                if expect_done && data == "[DONE]" {
                     done_received = true;
                     break;
                 }
@@ -222,6 +245,18 @@ where
 
         if done_received {
             break;
+        }
+    }
+
+    // Flush any remaining content in the buffer (final frame without trailing newline)
+    let remaining = buffer.trim();
+    if !remaining.is_empty() && !remaining.starts_with(':') {
+        if let Some(data) = remaining.strip_prefix("data: ") {
+            if !(expect_done && data == "[DONE]") {
+                if let Ok(chunk) = serde_json::from_str::<TChunk>(data) {
+                    on_chunk(chunk);
+                }
+            }
         }
     }
 

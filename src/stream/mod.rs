@@ -2,11 +2,12 @@ pub use crate::types::{AssistantMessageEventStream, EventStreamSender};
 
 use crate::error::{Error, Result};
 use crate::providers::{
-    get_env_api_key, stream_minimax_completions, stream_openai_completions, stream_zai_completions,
-    OpenAICompletionsOptions,
+    get_env_api_key, stream_google_generative_ai, stream_minimax_completions,
+    stream_openai_completions, stream_zai_completions, OpenAICompletionsOptions,
 };
 use crate::types::{
-    Api, AssistantMessage, Context, MinimaxCompletions, Model, OpenAICompletions, ZaiCompletions,
+    Api, AssistantMessage, Context, GoogleGenerativeAi, MinimaxCompletions, Model,
+    OpenAICompletions, ZaiCompletions,
 };
 
 /// Stream a completion from an OpenAI-compatible model.
@@ -87,9 +88,15 @@ where
         Api::OpenAIResponses => Err(Error::InvalidResponse(
             "OpenAI Responses provider not yet implemented".to_string(),
         )),
-        Api::GoogleGenerativeAi => Err(Error::InvalidResponse(
-            "Google Generative AI provider not yet implemented".to_string(),
-        )),
+        Api::GoogleGenerativeAi => {
+            let model_ptr = model as *const Model<TApi> as *const Model<GoogleGenerativeAi>;
+            let google_model = unsafe { &*model_ptr };
+            Ok(stream_google_generative_ai(
+                google_model,
+                context,
+                resolved_options,
+            ))
+        }
         Api::GoogleVertex => Err(Error::InvalidResponse(
             "Google Vertex provider not yet implemented".to_string(),
         )),

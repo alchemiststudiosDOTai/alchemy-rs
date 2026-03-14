@@ -2,7 +2,7 @@
 # See: https://doc.rust-lang.org/clippy/lint_configuration.html
 
 # Cyclomatic/cognitive complexity threshold
-# Default is 25, we set it to 20 to catch overly complex functions
+# Default is 25, we set it to 15 to catch overly complex functions
 # TODO: Refactor process_chunk (currently 19) to get below 15
 cognitive-complexity-threshold = 15
 

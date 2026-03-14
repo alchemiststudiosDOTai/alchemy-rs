@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::api::{Api, ApiType, NoCompat, Provider};
+use super::api::{private::Sealed, Api, ApiType, NoCompat, Provider};
 use super::compat::{OpenAICompletionsCompat, OpenAIResponsesCompat};
 use super::usage::ModelCost;
 
@@ -27,6 +27,15 @@ pub struct Model<TApi: ApiType> {
     pub headers: Option<HashMap<String, String>>,
     pub compat: Option<TApi::Compat>,
 }
+
+impl Sealed for AnthropicMessages {}
+impl Sealed for BedrockConverseStream {}
+impl Sealed for OpenAICompletions {}
+impl Sealed for OpenAIResponses {}
+impl Sealed for MinimaxCompletions {}
+impl Sealed for ZaiCompletions {}
+impl Sealed for GoogleGenerativeAi {}
+impl Sealed for GoogleVertex {}
 
 #[derive(Debug, Clone, Copy)]
 pub struct AnthropicMessages;

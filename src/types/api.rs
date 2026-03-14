@@ -140,9 +140,13 @@ impl From<KnownProvider> for Provider {
     }
 }
 
-pub trait ApiType: Send + Sync {
+pub trait ApiType: Send + Sync + private::Sealed {
     type Compat: CompatibilityOptions;
     fn api(&self) -> Api;
+}
+
+pub(crate) mod private {
+    pub trait Sealed {}
 }
 
 pub trait CompatibilityOptions: Send + Sync + 'static {
