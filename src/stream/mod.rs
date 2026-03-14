@@ -172,6 +172,28 @@ mod tests {
         }
     }
 
+    fn featherless_test_model(base_url: &str) -> Model<OpenAICompletions> {
+        Model {
+            id: "moonshotai/Kimi-K2.5".to_string(),
+            name: "Kimi K2.5".to_string(),
+            api: OpenAICompletions,
+            provider: Provider::Known(KnownProvider::Featherless),
+            base_url: base_url.to_string(),
+            reasoning: false,
+            input: vec![InputType::Text],
+            cost: ModelCost {
+                input: 0.0,
+                output: 0.0,
+                cache_read: 0.0,
+                cache_write: 0.0,
+            },
+            context_window: 128_000,
+            max_tokens: 16_384,
+            headers: None,
+            compat: None,
+        }
+    }
+
     async fn assert_dispatches_to_provider<TApi>(model: Model<TApi>, expected_api: Api)
     where
         TApi: crate::types::ApiType,
@@ -202,6 +224,12 @@ mod tests {
     async fn stream_dispatches_to_zai_provider() {
         let model = zai_test_model("http://127.0.0.1:1/api/paas/v4/chat/completions");
         assert_dispatches_to_provider(model, Api::ZaiCompletions).await;
+    }
+
+    #[tokio::test]
+    async fn stream_dispatches_featherless_through_openai_completions_provider() {
+        let model = featherless_test_model("http://127.0.0.1:1/v1/chat/completions");
+        assert_dispatches_to_provider(model, Api::OpenAICompletions).await;
     }
 
     #[test]

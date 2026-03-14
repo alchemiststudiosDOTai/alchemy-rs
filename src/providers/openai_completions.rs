@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+#[cfg(test)]
+use super::shared::finish_current_block;
 use super::shared::{
     convert_messages, convert_tools, handle_reasoning_delta, handle_text_delta, handle_tool_calls,
     initialize_output, map_stop_reason, push_stream_error, run_openai_like_stream_without_state,
@@ -297,6 +299,9 @@ fn detect_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
     let provider = &model.provider;
     let base_url = &model.base_url;
 
+    let is_featherless = matches!(provider, Provider::Known(KnownProvider::Featherless))
+        || base_url.contains("featherless.ai");
+
     let is_non_standard = matches!(
         provider,
         Provider::Known(KnownProvider::Cerebras)
@@ -307,7 +312,8 @@ fn detect_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
         || base_url.contains("mistral.ai")
         || base_url.contains("chutes.ai");
 
-    let use_max_tokens = matches!(provider, Provider::Known(KnownProvider::Mistral))
+    let use_max_tokens = is_featherless
+        || matches!(provider, Provider::Known(KnownProvider::Mistral))
         || base_url.contains("mistral.ai")
         || base_url.contains("chutes.ai");
 
@@ -358,7 +364,16 @@ struct StreamDelta {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{InputType, ModelCost};
+    use crate::test_helpers::{
+        assert_final_message_shape, build_final_message_shape_chunks, ExpectedFinalMessageShape,
+    };
+    use crate::types::{
+        Context, InputType, MaxTokensField, Message, ModelCost, StopReason, UserContent,
+        UserMessage,
+    };
+    use futures::executor::block_on;
+    use futures::StreamExt;
+    use serde_json::json;
 
     fn make_test_model(
         id: &str,
@@ -385,6 +400,29 @@ mod tests {
             headers: None,
             compat: None,
         }
+    }
+
+    fn process_chunks_for_test(
+        model: &Model<OpenAICompletions>,
+        chunks: Vec<StreamChunk>,
+    ) -> AssistantMessage {
+        let (mut stream, mut sender) = AssistantMessageEventStream::new();
+        let mut output = initialize_output(
+            Api::OpenAICompletions,
+            model.provider.clone(),
+            model.id.clone(),
+        );
+        let mut current_block = None;
+
+        for chunk in chunks {
+            process_chunk(&chunk, &mut output, &mut sender, &mut current_block);
+        }
+
+        finish_current_block(&mut current_block, &mut output, &mut sender);
+        drop(sender);
+
+        let _events = block_on(async move { stream.by_ref().collect::<Vec<_>>().await });
+        output
     }
 
     #[test]
@@ -419,5 +457,79 @@ mod tests {
         assert_eq!(compat.max_tokens_field, MaxTokensField::MaxTokens);
         assert!(compat.requires_mistral_tool_ids);
         assert!(compat.requires_tool_result_name);
+    }
+
+    #[test]
+    fn detect_compat_for_featherless_defaults() {
+        let model = make_test_model(
+            "moonshotai/Kimi-K2.5",
+            "Kimi K2.5",
+            KnownProvider::Featherless,
+            "https://api.featherless.ai/v1/chat/completions",
+        );
+
+        let compat = detect_compat(&model);
+        assert!(compat.supports_store);
+        assert!(compat.supports_developer_role);
+        assert!(compat.supports_reasoning_effort);
+        assert!(compat.supports_usage_in_streaming);
+        assert_eq!(compat.max_tokens_field, MaxTokensField::MaxTokens);
+        assert!(!compat.requires_mistral_tool_ids);
+    }
+
+    #[test]
+    fn build_params_uses_max_tokens_for_featherless() {
+        let model = make_test_model(
+            "moonshotai/Kimi-K2.5",
+            "Kimi K2.5",
+            KnownProvider::Featherless,
+            "https://api.featherless.ai/v1/chat/completions",
+        );
+        let context = Context {
+            system_prompt: Some("Be concise.".to_string()),
+            messages: vec![Message::User(UserMessage {
+                content: UserContent::Text("Reply with ok".to_string()),
+                timestamp: 0,
+            })],
+            tools: None,
+        };
+        let options = OpenAICompletionsOptions {
+            max_tokens: Some(128),
+            ..OpenAICompletionsOptions::default()
+        };
+
+        let params = build_params(&model, &context, &options, &resolve_compat(&model));
+
+        assert_eq!(params["model"], json!("moonshotai/Kimi-K2.5"));
+        assert_eq!(params["max_tokens"], json!(128));
+        assert!(params.get("max_completion_tokens").is_none());
+        assert_eq!(params["store"], json!(false));
+        assert_eq!(params["stream_options"]["include_usage"], json!(true));
+        assert_eq!(params["messages"][0]["role"], json!("system"));
+    }
+
+    #[test]
+    fn stream_featherless_openai_compatible_runtime_returns_expected_message_shape() {
+        let model = make_test_model(
+            "moonshotai/Kimi-K2.5",
+            "Kimi K2.5",
+            KnownProvider::Featherless,
+            "https://api.featherless.ai/v1/chat/completions",
+        );
+        let chunks = build_final_message_shape_chunks::<StreamChunk>(json!({
+            "reasoning": "thinking"
+        }));
+        let result = process_chunks_for_test(&model, chunks);
+
+        assert_final_message_shape(
+            &result,
+            ExpectedFinalMessageShape {
+                api: Api::OpenAICompletions,
+                provider: Provider::Known(KnownProvider::Featherless),
+                model: "moonshotai/Kimi-K2.5",
+                stop_reason: StopReason::Stop,
+                total_tokens: 15,
+            },
+        );
     }
 }

@@ -217,99 +217,117 @@ fn process_event(
     current_block: &mut Option<CurrentBlock>,
 ) {
     match event_type {
-        "content_block_start" => {
-            finish_current_block(current_block, output, sender);
-            if let Some(block) = &event.content_block {
-                if block.block_type == "tool_use" {
-                    let id = block.id.clone().unwrap_or_default();
-                    let name = block.name.clone().unwrap_or_default();
-                    *current_block = Some(CurrentBlock::ToolCall {
-                        id: id.clone(),
-                        name: name.clone(),
-                        partial_args: String::new(),
-                    });
-                    output.content.push(Content::tool_call(
-                        id,
-                        name,
-                        serde_json::Value::Object(serde_json::Map::new()),
-                    ));
-                    sender.push(AssistantMessageEvent::ToolCallStart {
-                        content_index: output.content.len() - 1,
+        "content_block_start" => handle_block_start(event, output, sender, current_block),
+        "content_block_delta" => handle_block_delta(event, output, sender, current_block),
+        "content_block_stop" => finish_current_block(current_block, output, sender),
+        "message_start" => handle_message_start(event, output),
+        "message_delta" => handle_message_delta(event, output),
+        _ => {}
+    }
+}
+
+fn handle_block_start(
+    event: &SseEvent,
+    output: &mut AssistantMessage,
+    sender: &mut EventStreamSender,
+    current_block: &mut Option<CurrentBlock>,
+) {
+    finish_current_block(current_block, output, sender);
+    let Some(block) = &event.content_block else {
+        return;
+    };
+    if block.block_type != "tool_use" {
+        return;
+    }
+    let id = block.id.clone().unwrap_or_default();
+    let name = block.name.clone().unwrap_or_default();
+    *current_block = Some(CurrentBlock::ToolCall {
+        id: id.clone(),
+        name: name.clone(),
+        partial_args: String::new(),
+    });
+    output.content.push(Content::tool_call(
+        id,
+        name,
+        serde_json::Value::Object(serde_json::Map::new()),
+    ));
+    sender.push(AssistantMessageEvent::ToolCallStart {
+        content_index: output.content.len() - 1,
+        partial: output.clone(),
+    });
+}
+
+fn handle_block_delta(
+    event: &SseEvent,
+    output: &mut AssistantMessage,
+    sender: &mut EventStreamSender,
+    current_block: &mut Option<CurrentBlock>,
+) {
+    let Some(delta) = &event.delta else { return };
+    match delta.delta_type.as_deref() {
+        Some("text_delta") => {
+            if let Some(text) = &delta.text {
+                handle_text_delta(text, output, sender, current_block);
+            }
+        }
+        Some("thinking_delta") => {
+            if let Some(thinking) = &delta.thinking {
+                handle_reasoning_delta(
+                    ReasoningDelta {
+                        text: thinking,
+                        signature: THINKING_SIGNATURE,
+                    },
+                    output,
+                    sender,
+                    current_block,
+                );
+            }
+        }
+        Some("signature_delta") => {
+            if let Some(sig) = &delta.signature {
+                if let Some(CurrentBlock::Thinking { signature, .. }) = current_block {
+                    *signature = sig.clone();
+                }
+            }
+        }
+        Some("input_json_delta") => {
+            if let Some(partial) = &delta.partial_json {
+                if let Some(CurrentBlock::ToolCall { partial_args, .. }) = current_block {
+                    partial_args.push_str(partial);
+                    sender.push(AssistantMessageEvent::ToolCallDelta {
+                        content_index: output.content.len().saturating_sub(1),
+                        delta: partial.clone(),
                         partial: output.clone(),
                     });
                 }
             }
         }
-        "content_block_delta" => {
-            let Some(delta) = &event.delta else { return };
-            match delta.delta_type.as_deref() {
-                Some("text_delta") => {
-                    if let Some(text) = &delta.text {
-                        handle_text_delta(text, output, sender, current_block);
-                    }
-                }
-                Some("thinking_delta") => {
-                    if let Some(thinking) = &delta.thinking {
-                        handle_reasoning_delta(
-                            ReasoningDelta {
-                                text: thinking,
-                                signature: THINKING_SIGNATURE,
-                            },
-                            output,
-                            sender,
-                            current_block,
-                        );
-                    }
-                }
-                Some("signature_delta") => {
-                    if let Some(sig) = &delta.signature {
-                        if let Some(CurrentBlock::Thinking { signature, .. }) = current_block {
-                            *signature = sig.clone();
-                        }
-                    }
-                }
-                Some("input_json_delta") => {
-                    if let Some(partial) = &delta.partial_json {
-                        if let Some(CurrentBlock::ToolCall { partial_args, .. }) = current_block {
-                            partial_args.push_str(partial);
-                            sender.push(AssistantMessageEvent::ToolCallDelta {
-                                content_index: output.content.len().saturating_sub(1),
-                                delta: partial.clone(),
-                                partial: output.clone(),
-                            });
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        "content_block_stop" => finish_current_block(current_block, output, sender),
-        "message_start" => {
-            if let Some(msg) = &event.message {
-                if let Some(u) = &msg.usage {
-                    output.usage = Usage {
-                        input: u.input_tokens.unwrap_or(0),
-                        output: 0,
-                        cache_read: u.cache_read_input_tokens.unwrap_or(0),
-                        cache_write: u.cache_creation_input_tokens.unwrap_or(0),
-                        total_tokens: u.input_tokens.unwrap_or(0),
-                        cost: Cost::default(),
-                    };
-                }
-            }
-        }
-        "message_delta" => {
-            if let Some(delta) = &event.delta {
-                if let Some(reason) = &delta.stop_reason {
-                    output.stop_reason = map_stop_reason(reason);
-                }
-            }
-            if let Some(u) = &event.usage {
-                output.usage.output = u.output_tokens.unwrap_or(0);
-                output.usage.total_tokens = output.usage.input + output.usage.output;
-            }
-        }
         _ => {}
+    }
+}
+
+fn handle_message_start(event: &SseEvent, output: &mut AssistantMessage) {
+    let Some(msg) = &event.message else { return };
+    let Some(u) = &msg.usage else { return };
+    output.usage = Usage {
+        input: u.input_tokens.unwrap_or(0),
+        output: 0,
+        cache_read: u.cache_read_input_tokens.unwrap_or(0),
+        cache_write: u.cache_creation_input_tokens.unwrap_or(0),
+        total_tokens: u.input_tokens.unwrap_or(0),
+        cost: Cost::default(),
+    };
+}
+
+fn handle_message_delta(event: &SseEvent, output: &mut AssistantMessage) {
+    if let Some(delta) = &event.delta {
+        if let Some(reason) = &delta.stop_reason {
+            output.stop_reason = map_stop_reason(reason);
+        }
+    }
+    if let Some(u) = &event.usage {
+        output.usage.output = u.output_tokens.unwrap_or(0);
+        output.usage.total_tokens = output.usage.input + output.usage.output;
     }
 }
 

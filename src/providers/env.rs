@@ -30,6 +30,7 @@ fn get_env_api_key_for_known(provider: &KnownProvider) -> Option<String> {
 
         // Standard API key providers
         KnownProvider::OpenAI => env::var("OPENAI_API_KEY").ok(),
+        KnownProvider::Featherless => env::var("FEATHERLESS_API_KEY").ok(),
         KnownProvider::Google => env::var("GEMINI_API_KEY").ok(),
         KnownProvider::Groq => env::var("GROQ_API_KEY").ok(),
         KnownProvider::Cerebras => env::var("CEREBRAS_API_KEY").ok(),
@@ -128,6 +129,16 @@ mod tests {
         let result = get_env_api_key(&Provider::Known(KnownProvider::OpenAI));
         assert_eq!(result, Some(key.to_string()));
         env::remove_var("OPENAI_API_KEY");
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_env_api_key_featherless() {
+        let key = "fake_featherless_test_key";
+        env::set_var("FEATHERLESS_API_KEY", key);
+        let result = get_env_api_key(&Provider::Known(KnownProvider::Featherless));
+        assert_eq!(result, Some(key.to_string()));
+        env::remove_var("FEATHERLESS_API_KEY");
     }
 
     #[test]

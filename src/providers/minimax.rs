@@ -323,8 +323,7 @@ struct ReasoningDetail {
 mod tests {
     use super::*;
     use crate::test_helpers::{
-        assert_streaming_final_message_shape, build_final_message_shape_sse_body,
-        ExpectedFinalMessageShape,
+        assert_final_message_shape, build_final_message_shape_chunks, ExpectedFinalMessageShape,
     };
     use crate::types::{
         AssistantMessageEvent, Content, InputType, KnownProvider, Message, ModelCost, Provider,
@@ -723,24 +722,15 @@ mod tests {
         assert_eq!(output.usage.total_tokens, 20);
     }
 
-    #[tokio::test]
-    async fn stream_minimax_completions_final_message_shape() {
-        let sse_body = build_final_message_shape_sse_body(serde_json::json!({
+    #[test]
+    fn stream_minimax_completions_final_message_shape() {
+        let chunks = build_final_message_shape_chunks::<StreamChunk>(serde_json::json!({
             "reasoning_details": [{"text": "reason"}]
         }));
+        let (_events, output) = process_chunks_for_test(chunks);
 
-        let options = OpenAICompletionsOptions {
-            api_key: Some("test-key".to_string()),
-            ..OpenAICompletionsOptions::default()
-        };
-
-        assert_streaming_final_message_shape(
-            make_model(true),
-            make_context(),
-            options,
-            sse_body,
-            "/v1/chat/completions",
-            stream_minimax_completions,
+        assert_final_message_shape(
+            &output,
             ExpectedFinalMessageShape {
                 api: Api::MinimaxCompletions,
                 provider: Provider::Known(KnownProvider::Minimax),
@@ -748,7 +738,6 @@ mod tests {
                 stop_reason: StopReason::Stop,
                 total_tokens: 15,
             },
-        )
-        .await;
+        );
     }
 }

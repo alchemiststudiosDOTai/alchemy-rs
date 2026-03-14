@@ -11,6 +11,7 @@ read_when:
 ## Start Here
 
 - [providers/architecture.md](./providers/architecture.md) - Provider implementation contract for unified thinking, replay fidelity, and stream normalization
+- [providers/featherless.md](./providers/featherless.md) - Featherless first-class provider notes for the shared OpenAI-compatible path
 
 ## Notes
 

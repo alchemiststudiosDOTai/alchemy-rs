@@ -280,7 +280,7 @@ struct StreamDelta {
 mod tests {
     use super::*;
     use crate::test_helpers::{
-        assert_streaming_final_message_shape, build_final_message_shape_sse_body,
+        assert_final_message_shape, build_final_message_shape_chunks,
         populated_zai_chat_completions_options, populated_zai_chat_completions_options_json,
         ExpectedFinalMessageShape,
     };
@@ -576,24 +576,15 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn stream_zai_completions_final_message_shape() {
-        let sse_body = build_final_message_shape_sse_body(json!({
+    #[test]
+    fn stream_zai_completions_final_message_shape() {
+        let chunks = build_final_message_shape_chunks::<StreamChunk>(json!({
             "reasoning_content": "reason"
         }));
+        let (_events, output) = process_chunks_for_test(chunks);
 
-        let options = OpenAICompletionsOptions {
-            api_key: Some("test-key".to_string()),
-            ..OpenAICompletionsOptions::default()
-        };
-
-        assert_streaming_final_message_shape(
-            make_model(true),
-            make_context(),
-            options,
-            sse_body,
-            "/api/paas/v4/chat/completions",
-            stream_zai_completions,
+        assert_final_message_shape(
+            &output,
             ExpectedFinalMessageShape {
                 api: Api::ZaiCompletions,
                 provider: Provider::Known(KnownProvider::Zai),
@@ -601,7 +592,6 @@ mod tests {
                 stop_reason: StopReason::Stop,
                 total_tokens: 15,
             },
-        )
-        .await;
+        );
     }
 }
