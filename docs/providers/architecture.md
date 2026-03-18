@@ -1,254 +1,385 @@
 ---
-summary: "Provider implementation contract for unified thinking, replay fidelity, and shared stream block handling"
+summary: "Source-of-truth contract for provider runtimes, canonical content/event shapes, replay fidelity, and provider docs"
 read_when:
   - You are adding a new first-class provider implementation
-  - You need to understand how reasoning/thinking is normalized in `alchemy_llm`
+  - You are writing or reshaping a provider doc
+  - You need the exact canonical message, content, or stream-event contract
   - You are wiring same-provider replay or cross-provider transformation behavior
 ---
 
-# Provider Architecture: Unified Thinking and Replay Contract
+# Provider Architecture Contract
 
-This document describes the provider-side contract for reasoning/thinking support in `alchemy_llm`.
+This document is the source of truth for provider implementations in `alchemy_llm`.
 
-The short version:
+It defines four things:
 
-1. **Normalize provider reasoning into the shared content model**
-2. **Preserve same-provider replay fidelity**
-3. **Degrade safely for cross-provider transforms**
-4. **Use the shared stream block helpers unless a provider has a strong reason not to**
+1. the canonical data shapes every provider must map into
+2. the stream event contract exposed by `stream(...)`
+3. the replay contract for same-provider and cross-provider reuse
+4. the structure every provider doc should follow
 
-This is the architecture already followed by the OpenAI-like, MiniMax, and z.ai providers.
+If a provider-specific doc disagrees with this document, this document wins.
 
-## Canonical Internal Model
+## The Short Version
 
-All assistant output is normalized into `types::Content` blocks:
+Every provider implementation must do all of the following:
 
-- `Content::Text`
-- `Content::Thinking`
-- `Content::ToolCall`
-- `Content::Image`
+1. accept the shared `Context` input model
+2. normalize provider output into canonical `Content` blocks
+3. emit canonical `AssistantMessageEvent` sequences
+4. preserve provider-native replay fidelity when the next turn targets the same provider/model
+5. degrade only through `transform_messages(...)` when crossing providers
+6. prove the mapping with focused serialization and streaming tests
 
-Relevant types live in `src/types/content.rs`.
+## Canonical Input Contract
 
-### Thinking and signature fields
+Top-level generation always starts from:
 
-The unified reasoning model is:
-
-- `ThinkingContent { thinking, thinking_signature }`
-- `ToolCall { id, name, arguments, thought_signature }`
-
-These fields are intentionally provider-agnostic:
-
-- `thinking` is the normalized reasoning text
-- `thinking_signature` is provider metadata needed to preserve same-model replay
-- `thought_signature` on tool calls is reserved for providers that attach replay-sensitive reasoning metadata to tool-call blocks
-
-## Shared Pipeline
-
-Most providers should follow this path:
-
-```text
-provider stream payload
-  -> provider-specific field extraction
-  -> handle_reasoning_delta / handle_text_delta / handle_tool_calls
-  -> Content::{Thinking, Text, ToolCall}
-  -> transform_messages(...) for cross-provider reuse
-  -> provider-specific request serializer for replay
+```rust
+Context {
+    system_prompt: Option<String>,
+    messages: Vec<Message>,
+    tools: Option<Vec<Tool>>,
+}
 ```
 
-The key shared files are:
+The message history is provider-agnostic:
 
-- `src/providers/shared/stream_blocks.rs`
-- `src/providers/shared/openai_like_messages.rs`
-- `src/transform.rs`
+```rust
+Message::User(UserMessage)
+Message::Assistant(AssistantMessage)
+Message::ToolResult(ToolResultMessage)
+```
 
-## Stream Normalization Contract
+### User message shapes
 
-### Reasoning must become `Content::Thinking`
+User messages support two content forms:
 
-If a provider emits reasoning in any form, normalize it into `Content::Thinking`.
+```rust
+UserContent::Text(String)
+UserContent::Multi(Vec<UserContentBlock>)
+```
 
-Examples from current providers:
+The current user content blocks are:
 
-- OpenAI-like providers map `reasoning_content`, `reasoning`, or `reasoning_text`
-- MiniMax maps explicit reasoning fields or parses `<think>...</think>` fallback text
-- z.ai maps its reasoning fields into the same shared helper path
+```rust
+UserContentBlock::Text(TextContent)
+UserContentBlock::Image(ImageContent)
+```
 
-The preferred entry point is `handle_reasoning_delta(...)` in `src/providers/shared/stream_blocks.rs`.
+Provider serializers may drop image inputs when the target model does not declare `InputType::Image`.
 
-That helper is responsible for:
+### Tool definitions
 
-- starting/appending a shared thinking block
-- emitting unified thinking events
-- finalizing `Content::Thinking`
-- storing `thinking_signature`
+Tool definitions come from `Context.tools` and must be serialized into the provider's native tool/function schema without changing their semantic meaning:
 
-### Text must become `Content::Text`
+- tool name
+- tool description
+- JSON Schema parameters
 
-Provider-visible answer text should go through `handle_text_delta(...)` so that event ordering and block boundaries stay consistent across providers.
+## Canonical Output Contract
 
-### Tool calls must become `Content::ToolCall`
+Every provider must normalize the final assistant result into:
 
-Tool-call deltas should use the shared tool-call helpers where possible.
+```rust
+AssistantMessage {
+    content: Vec<Content>,
+    api: Api,
+    provider: Provider,
+    model: String,
+    usage: Usage,
+    stop_reason: StopReason,
+    error_message: Option<String>,
+    timestamp: i64,
+}
+```
 
-If a provider cannot use the incremental OpenAI-like tool-call path, its custom implementation must still end in the same internal shape:
+The canonical assistant block model is:
 
-- `Content::ToolCall`
-- stable `ToolCall.id`
-- parsed `ToolCall.arguments`
-- `thought_signature` preserved when required by the provider
+```rust
+Content::Text { inner: TextContent }
+Content::Thinking { inner: ThinkingContent }
+Content::Image { inner: ImageContent }
+Content::ToolCall { inner: ToolCall }
+```
+
+### Block semantics
+
+`Content::Text`
+
+- visible assistant answer text
+- provider text should land here unless it is explicitly reasoning/thinking
+
+`Content::Thinking`
+
+- normalized provider reasoning/thinking
+- use this whenever the provider emits internal reasoning in any supported form
+- preserve provider metadata in `thinking_signature` when it matters for replay
+
+`Content::Image`
+
+- assistant image output in canonical binary form
+- not all streaming runtimes expose image-specific delta events today
+
+`Content::ToolCall`
+
+- normalized tool/function call
+- `id` must be stable enough for tool-result replay
+- `arguments` must end as parsed JSON
+- `thought_signature` is reserved for providers that attach replay-sensitive metadata to tool-call blocks
+
+### Signature fields
+
+The shared content model has three provider-metadata escape hatches:
+
+- `TextContent.text_signature`
+- `ThinkingContent.thinking_signature`
+- `ToolCall.thought_signature`
+
+Use them only when the provider requires extra metadata for valid same-provider replay.
+
+If the provider returns an opaque replay token, preserve the raw token. Do not replace it with a synthetic marker.
+
+## Canonical Stream Event Contract
+
+The public streaming surface is `AssistantMessageEventStream`, which yields `AssistantMessageEvent`.
+
+The canonical event families are:
+
+```rust
+Start
+TextStart / TextDelta / TextEnd
+ThinkingStart / ThinkingDelta / ThinkingEnd
+ToolCallStart / ToolCallDelta / ToolCallEnd
+Done
+Error
+```
+
+### Event sequencing rules
+
+Every successful stream must follow this shape:
+
+1. one `Start`
+2. zero or more finalized block lifecycles
+3. one `Done`
+
+Every failed stream must follow this shape:
+
+1. zero or one `Start`
+2. optional partial block activity
+3. one `Error`
+
+For each block type, events must be ordered as:
+
+1. `*Start`
+2. zero or more `*Delta` events
+3. `*End`
+
+Block boundaries matter. If the provider switches from thinking to text, or from text to tool call, the current block must be finalized before the next block starts.
+
+### Partial snapshot semantics
+
+`partial` snapshots in delta events are in-progress structural snapshots, not necessarily fully materialized block payloads.
+
+In the shared helpers today:
+
+- text/thinking/tool-call blocks are opened before their final payload is written back into `output.content`
+- the authoritative finalized block content arrives at `*End` and is also present in `Done`
+
+Provider docs should not promise stronger semantics unless that runtime actually provides them.
+
+### Stop reason normalization
+
+Providers must map native termination reasons into the canonical enum:
+
+- `StopReason::Stop`
+- `StopReason::Length`
+- `StopReason::ToolUse`
+- `StopReason::Error`
+- `StopReason::Aborted`
+
+Provider-native names differ, but the public stream/result surface must not.
+
+### Usage normalization
+
+Usage data must be accumulated into canonical `Usage` fields:
+
+- `input`
+- `output`
+- `cache_read`
+- `cache_write`
+- `total_tokens`
+- `cost`
+
+If a provider reports only part of that data, fill what is known and leave the rest at zero/default.
 
 ## Replay Contract
 
-### Same provider + same model should preserve replay fidelity
+Replay is where most provider integrations go wrong. The rule is simple:
 
-If the next turn targets the same provider/model, the provider should preserve all metadata required for valid replay.
+### Same provider + same model
 
-This includes, when applicable:
+Preserve everything required for valid replay:
 
 - thinking blocks
-- provider-native reasoning signatures
-- tool-call thought signatures
+- provider-issued signatures
+- tool-call ids
 - provider-required block ordering
+- provider-specific assistant serialization shape
 
-The transform layer already expresses this rule.
+If a provider requires reasoning signatures for replay, preserving only visible reasoning text is not enough.
 
-From `src/transform.rs`:
+### Cross-provider transform
 
-- same model + signature -> keep for replay
-- different provider/model -> degrade to portable representation
+Cross-provider reuse is allowed to degrade.
 
-### Cross-provider transform may degrade reasoning
+That degradation must happen through `transform_messages(...)`, not through ad hoc logic in provider runtimes. Typical degradation includes:
 
-When transforming to a different provider/model, the system may convert thinking to plain text and strip provider-specific signatures.
+- dropping provider-specific signatures
+- converting thinking to portable text when needed
+- normalizing tool-call ids for the target provider
 
-That behavior is intentional and is documented in `docs/utils/transform.md`.
+## Provider Families
 
-The replay-preservation burden therefore falls on the provider implementation for **same-provider replay**, not on the cross-provider transform path.
+Not every provider needs a fully custom runtime. Providers should be grouped by wire-family whenever possible.
 
-## Provider Serializer Contract
+### OpenAI-like family
 
-When converting an `AssistantMessage` back into request history for a provider, the serializer must respect the provider's replay semantics.
+Use the shared OpenAI-like helpers when the provider accepts:
 
-Examples from existing providers:
-
-- MiniMax replays thinking as `<think>...</think>` blocks
-- z.ai can emit thinking via `reasoning_content`
-- OpenAI-like serializers may omit or flatten thinking depending on compatibility settings
-
-This logic belongs in the provider-specific request builder or shared message serializer.
-
-### Important distinction: normalized signatures vs opaque provider signatures
-
-Some providers only need lightweight internal provenance markers such as:
-
-- `reasoning_content`
-- `reasoning_text`
-- `think_tag`
-
-Those are fine as `thinking_signature` values when they are sufficient for replay.
-
-Other providers may return **opaque provider-issued replay tokens** that must be passed back exactly as received. In those cases:
-
-- the raw provider token must be captured
-- stored in the canonical content model
-- serialized back in the same block position the provider expects
-
-If a provider has hard replay requirements for thought signatures, it is not enough to preserve only the visible reasoning text.
-
-## Provider Checklist
-
-When adding or reviewing a provider, verify all of the following:
-
-### Inbound stream handling
-
-- [ ] Reasoning fields are mapped to `Content::Thinking`
-- [ ] Text fields are mapped to `Content::Text`
-- [ ] Tool calls are mapped to `Content::ToolCall`
-- [ ] Provider-specific replay signatures are captured when present
-- [ ] Unified event ordering is preserved
-
-### Outbound replay handling
-
-- [ ] Same-provider replay includes the provider's required thinking representation
-- [ ] Same-provider replay preserves provider-issued signatures when required
-- [ ] Tool-call replay preserves provider-required IDs and signature metadata
-- [ ] Cross-provider replay intentionally degrades only through `transform_messages(...)`
-
-### Tests
-
-- [ ] Stream chunks map to unified thinking/text/tool-call content correctly
-- [ ] Same-provider replay round trip works for a multi-turn conversation
-- [ ] Tool-call round trip works across at least one tool execution cycle
-- [ ] Provider-specific reasoning signatures are preserved when required
-- [ ] Cross-provider transformation strips only the signatures it is supposed to strip
-
-## Current Implementations to Reference
-
-### OpenAI-like
+- OpenAI-style `messages`
+- function/tool definitions in OpenAI-style schema
+- SSE chunks that look like choice/delta streams
 
 Reference files:
 
-- `src/providers/openai_completions.rs`
 - `src/providers/shared/openai_like_messages.rs`
 - `src/providers/shared/stream_blocks.rs`
+- `src/providers/shared/openai_like_runtime.rs`
 
-Pattern:
+### Anthropic-style family
 
-- provider field extraction stays thin
-- shared helpers own block assembly
-- serializer behavior is controlled by `OpenAiLikeMessageOptions`
+Use an Anthropic-style path when the provider speaks in:
 
-### MiniMax
+- `/messages`-style request bodies
+- typed content blocks
+- SSE `event:` + `data:` frames such as `message_start` and `content_block_delta`
 
-Reference files:
+Even when the wire format differs from OpenAI-like providers, the normalized crate output must still use the same canonical `Content` and `AssistantMessageEvent` model.
 
-- `src/providers/minimax.rs`
-- `docs/providers/minimax.md`
+### Custom family
 
-Pattern:
+If the provider wire protocol is unique, a custom runtime is fine. The custom code still must end in the same canonical shapes described in this doc.
 
-- explicit reasoning fields map into `handle_reasoning_delta(...)`
-- `<think>` fallback is parsed and still normalized into the same internal model
-- replay wraps thinking back into `<think>...</think>` blocks
+## Canonical Serialization Shapes
 
-### z.ai
+Provider request serializers differ, but the source material for assistant replay is always the same canonical assistant block list.
 
-Reference files:
+A representative assistant content sequence is:
 
-- `src/providers/zai.rs`
-- `docs/providers/zai.md`
+```rust
+vec![
+    Content::thinking("first reason"),
+    Content::text("final answer"),
+    Content::tool_call("call_1", "get_weather", json!({"city": "Tokyo"})),
+]
+```
 
-Pattern:
+One existing ground-truth serialization test is:
 
-- reasoning fields normalize into unified thinking blocks
-- replay emits provider-specific reasoning fields from the same internal content
+- `src/providers/shared/openai_like_messages.rs`
+  `convert_messages_zai_mode_matches_canonical_assistant_replay_shape`
 
-## Guidance for Non-OpenAI-like Providers
+That test is useful because it exercises the three most important replay block types in one assistant message:
 
-A provider does **not** need to be OpenAI-compatible to follow this contract.
+- thinking
+- text
+- tool call
 
-If a provider has a custom protocol, it may still:
+Every provider family should have an equivalent shape test for its own serializer.
 
-1. parse its native response shape itself
-2. map reasoning/text/tool calls into the canonical `Content` blocks
-3. preserve provider-native replay signatures in `thinking_signature` / `thought_signature`
-4. serialize assistant history back into the provider's native request format
+## Test Contract
 
-What matters is the shared internal shape and replay fidelity, not whether the wire protocol looks OpenAI-like.
+At minimum, a provider implementation should prove all of the following:
 
-## Anti-Patterns
+### Serialization tests
 
-Avoid these when implementing a provider:
+- user text is serialized correctly
+- user images are either serialized correctly or intentionally dropped for text-only models
+- assistant text/thinking/tool-call replay shape matches the provider's native request format
+- tool-result messages serialize correctly
+- provider-specific signatures survive same-provider replay
 
-- Treating provider reasoning as text-only when the provider requires replay signatures
-- Emitting `Content::Thinking` during streaming but dropping it during assistant-history replay
-- Storing placeholder signatures when the provider returned an opaque signature that must be replayed exactly
-- Implementing same-provider replay semantics only in tests or examples rather than in the serializer path
+### Streaming tests
+
+- text deltas become `Content::Text` and text events
+- reasoning deltas become `Content::Thinking` and thinking events
+- tool-call deltas assemble into parsed JSON arguments
+- usage accounting updates canonical `Usage`
+- native stop reasons map to canonical `StopReason`
+- mixed/interleaved block transitions finalize the previous block before starting the next one
+
+### End-to-end dispatch tests
+
+- `stream(...)` routes the model to the correct runtime
+- `complete(...)` returns the final canonical `AssistantMessage`
+
+### The "all expected data types" test
+
+For each provider family, keep one focused test case that exercises the full expected assistant surface for that family in one conversation shape:
+
+- thinking
+- text
+- tool call
+- tool result replay
+- usage
+- stop reason
+
+If the provider supports images in a meaningful way, add image coverage explicitly rather than assuming the generic case already proves it.
+
+## Provider Doc Template
+
+Every provider-specific doc under `docs/providers/` should follow the same outline:
+
+1. what family/runtime the provider uses
+2. public model helpers
+3. authentication and environment variables
+4. request mapping from `Context` into provider-native payloads
+5. canonical output mapping into `Content` and `AssistantMessageEvent`
+6. replay and signature behavior
+7. stop-reason and usage notes
+8. tests and implementation files to reference
+
+Provider docs should describe actual implemented behavior, not aspirational API behavior.
+
+## Implementation Checklist
+
+- [ ] Provider accepts canonical `Context`
+- [ ] User text maps correctly
+- [ ] User image handling is explicit
+- [ ] Assistant text maps to `Content::Text`
+- [ ] Assistant reasoning maps to `Content::Thinking`
+- [ ] Assistant tool calls map to `Content::ToolCall`
+- [ ] Provider replay signatures are preserved when required
+- [ ] Stream event ordering matches the canonical lifecycle
+- [ ] Stop reasons map into canonical `StopReason`
+- [ ] Usage maps into canonical `Usage`
+- [ ] Same-provider replay is valid
+- [ ] Cross-provider degradation happens only via `transform_messages(...)`
+- [ ] Provider doc follows the shared template above
+
+## Files to Keep Open While Implementing
+
+- `src/types/content.rs`
+- `src/types/event.rs`
+- `src/types/message.rs`
+- `src/transform.rs`
+- `src/providers/shared/stream_blocks.rs`
+- `src/providers/shared/openai_like_messages.rs`
+- `src/providers/shared/openai_like_runtime.rs`
 
 ## Related Docs
 
-- `docs/utils/transform.md`
-- `docs/providers/minimax.md`
-- `docs/providers/zai.md`
-- `docs/api/lib.md`
+- `docs/README.md`
+- `docs/providers/anthropic.md`
+- `docs/providers/featherless.md`
