@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+[[ -n "${HOME:-}" && -f "$HOME/.cargo/env" ]] && . "$HOME/.cargo/env"
+
 TAIL_LINES="${HARNESS_TAIL_LINES:-80}"
 LOG_DIR="$(mktemp -d -t alchemy-harness-XXXXXX)"
 KEEP_LOGS=0

@@ -228,6 +228,51 @@ where
     Ok(())
 }
 
+pub(crate) async fn process_sse_stream_with_event<TChunk, F>(
+    response: reqwest::Response,
+    mut on_chunk: F,
+) -> Result<(), crate::Error>
+where
+    TChunk: DeserializeOwned,
+    F: FnMut(String, TChunk),
+{
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+    let mut current_event_type = String::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result?;
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+        while let Some(line_end) = buffer.find('\n') {
+            let line = buffer[..line_end].trim().to_string();
+            buffer = buffer[line_end + 1..].to_string();
+
+            if line.is_empty() || line.starts_with(':') {
+                continue;
+            }
+
+            if let Some(event_type) = line.strip_prefix("event: ") {
+                current_event_type = event_type.to_string();
+                continue;
+            }
+
+            if let Some(data) = line.strip_prefix("data: ") {
+                let data = data.trim();
+                if data == "[DONE]" {
+                    break;
+                }
+                if let Ok(parsed) = serde_json::from_str::<TChunk>(data) {
+                    on_chunk(current_event_type.clone(), parsed);
+                }
+                current_event_type.clear();
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{done_reason_from_stop_reason, require_api_key};
