@@ -1,6 +1,7 @@
 //! Shared utilities for provider implementations.
 
 mod anthropic_like;
+mod google_like;
 mod http;
 mod openai_like_messages;
 mod openai_like_runtime;
@@ -10,6 +11,7 @@ mod timestamp;
 pub(crate) use anthropic_like::{
     stream_anthropic_like_messages, AnthropicLikeAuth, AnthropicLikeProviderConfig,
 };
+pub(crate) use google_like::stream_google_like;
 pub(crate) use http::merge_headers;
 pub(crate) use openai_like_messages::{
     convert_messages, convert_tools, AssistantThinkingMode, OpenAiLikeMessageOptions,
@@ -23,5 +25,5 @@ pub(crate) use stream_blocks::finish_current_block;
 pub(crate) use stream_blocks::{
     apply_deferred_tool_calls, handle_reasoning_delta, handle_text_delta, handle_tool_calls,
     map_stop_reason, prepare_openai_like_chunk, update_usage_from_chunk, CurrentBlock,
-    OpenAiLikeStreamChunk, OpenAiLikeToolCallDelta, ReasoningDelta,
+    OpenAiLikeFunctionDelta, OpenAiLikeStreamChunk, OpenAiLikeToolCallDelta, ReasoningDelta,
 };
