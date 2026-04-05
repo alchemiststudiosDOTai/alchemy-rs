@@ -205,9 +205,27 @@ Public example binaries are still being rebuilt. For now, the most accurate usag
 ## Documentation
 
 - [docs/README.md](./docs/README.md) - Documentation index
-- [docs/providers/architecture.md](./docs/providers/architecture.md) - Provider architecture contract for unified thinking, replay fidelity, and stream normalization
+- [docs/providers/architecture.md](./docs/providers/architecture.md) - Provider architecture contract for unified thinking, replay fidelity, stream normalization, and cache options ownership
 - [docs/providers/featherless.md](./docs/providers/featherless.md) - Featherless as a first-class provider on the shared OpenAI-compatible path
-- [docs/providers/kimi.md](./docs/providers/kimi.md) - Kimi as a first-class provider on the shared Anthropic-style messages path
+- [docs/providers/kimi.md](./docs/providers/kimi.md) - Kimi as a first-class provider with Anthropic-typed output and a cache-capable chat completions transport
+
+## Kimi Cache Options
+
+Kimi keeps its public `Model<AnthropicMessages>` helper, but the runtime now routes through the cache-capable chat completions transport.
+
+Use the shared cache options field when you want a stable cache identity:
+
+```rust
+use alchemy_llm::{CacheOptions, OpenAICompletionsOptions, kimi_k2_5};
+
+let model = kimi_k2_5();
+let options = OpenAICompletionsOptions {
+    cache: Some(CacheOptions::new("kimi-prefix-cache")),
+    ..OpenAICompletionsOptions::default()
+};
+```
+
+On the Kimi transport, the cache layer maps this public cache options shape onto `prompt_cache_key` and injects `User-Agent: KimiCLI/1.29.0` for the request.
 
 ## Development
 

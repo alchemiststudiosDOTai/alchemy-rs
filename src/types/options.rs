@@ -25,6 +25,12 @@ pub struct CacheOptions {
     pub key: String,
 }
 
+impl CacheOptions {
+    pub fn new(key: impl Into<String>) -> Self {
+        Self { key: key.into() }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleStreamOptions {
     #[serde(flatten)]

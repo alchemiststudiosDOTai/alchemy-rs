@@ -60,8 +60,8 @@ env: {target: "local", notes: ""}
 
 ### T004 - Migrate the Kimi runtime onto the cache capability layer while preserving the public Anthropic model
 - Status: completed
-- Commit: pending
-- Files: src/providers/kimi.rs, src/stream/mod.rs, src/models/kimi.rs, src/providers/shared/openai_like_runtime.rs
+- Commit: eb01cc7
+- Files: src/providers/kimi.rs, src/stream/mod.rs, src/models/kimi.rs, src/providers/shared/openai_like_runtime.rs, src/providers/shared/anthropic_like.rs
 - Commands:
   - `cargo fmt --all` -> pass
   - `cargo test kimi_runtime_builds_chat_completions_request_with_cache_contract` -> pass
@@ -72,23 +72,31 @@ env: {target: "local", notes: ""}
 - Notes: replaced the Anthropic-like Kimi runtime with an OpenAI-like chat-completions runtime that still emits `Api::AnthropicMessages` and preserves the public `kimi-coding` model identity.
 
 ### T005 - Remove obsolete cache logic and codify the new pattern in developer docs
-- Status: pending
+- Status: completed
+- Commit: pending
+- Files: src/types/options.rs, src/providers/openai_completions.rs, docs/providers/kimi.md, docs/providers/architecture.md, README.md, examples/provider_probe.rs
+- Commands:
+  - `rg -n "prompt_cache_key|User-Agent: KimiCLI|cache options" README.md docs/providers/kimi.md docs/providers/architecture.md examples/provider_probe.rs` -> pass
+  - `make harness` -> pass
+- Tests: pass
+- Coverage delta: not measured
+- Notes: removed stale Anthropic-path Kimi docs, documented the central cache ownership pattern, updated the probe to use the public cache options shape, added a public `CacheOptions::new(...)` constructor so external examples compile, and completed the owned-cache-request constructor follow-through in the shared OpenAI-compatible runtime caller.
 
 ## Gate Results
-- Tests: pending
-- Coverage: pending
-- Type checks: pending
+- Tests: pass (`make harness`)
+- Coverage: not measured by harness
+- Type checks: pass (`make harness`)
 - Security: not run
-- Linters: pending
+- Linters: pass (`make harness`)
 
 ## Issues & Resolutions
-- None yet.
+- T004/T005 - `make harness` failed because the external probe example could not construct `#[non_exhaustive] CacheOptions` with a struct literal -> added `CacheOptions::new(...)` and updated example/docs to use it.
 
 ## Success Criteria
-- [ ] All planned gates passed
-- [ ] Rollout completed or rolled back
+- [x] All planned gates passed
+- [x] Rollout completed or rolled back
 - [ ] KPIs/SLOs within thresholds
-- [ ] Execution log saved
+- [x] Execution log saved
 
 ## Next Steps
-- Execute T001 through T005 in order.
+- QA from execute using `.artifacts/execute/2026-04-05_14-15-56_provider-cache-capability-layer.md`.

@@ -2,8 +2,9 @@ use std::env;
 use std::time::Instant;
 
 use alchemy_llm::types::{
-    AnthropicMessages, AssistantMessage, AssistantMessageEvent, Context, InputType, KnownProvider,
-    Message, Model, ModelCost, OpenAICompletions, Provider, Usage, UserContent, UserMessage,
+    AnthropicMessages, AssistantMessage, AssistantMessageEvent, CacheOptions, Context, InputType,
+    KnownProvider, Message, Model, ModelCost, OpenAICompletions, Provider, Usage, UserContent,
+    UserMessage,
 };
 use alchemy_llm::{kimi_k2_5, minimax_m2_7, stream, OpenAICompletionsOptions};
 use futures::StreamExt;
@@ -18,6 +19,7 @@ const KIMI_PASS_COUNT: usize = 10;
 const KIMI_PREFIX_LINES: usize = 512;
 const KIMI_PREFIX_LINE: &str =
     "Kimi cache probe stable prefix sentence for repeated requests. Preserve this wording exactly.";
+const KIMI_CACHE_KEY: &str = "provider-probe-kimi-prefix-cache";
 
 #[derive(Clone)]
 struct ProbeScenario {
@@ -241,7 +243,7 @@ async fn run_single_pass<TApi: alchemy_llm::types::ApiType>(
 ) -> alchemy_llm::Result<(Usage, u128)> {
     let started_at = Instant::now();
     let context = build_context(scenario);
-    let request_options = build_request_options(options, scenario.max_tokens);
+    let request_options = build_request_options(&model.provider, options, scenario.max_tokens);
 
     let mut stream = stream(model, &context, request_options)?;
 
@@ -268,13 +270,18 @@ fn build_context(scenario: &ProbeScenario) -> Context {
 }
 
 fn build_request_options(
+    provider: &Provider,
     options: Option<OpenAICompletionsOptions>,
     max_tokens: u32,
 ) -> Option<OpenAICompletionsOptions> {
-    Some(OpenAICompletionsOptions {
-        max_tokens: Some(max_tokens),
-        ..options.unwrap_or_default()
-    })
+    let mut options = options.unwrap_or_default();
+    options.max_tokens = Some(max_tokens);
+
+    if matches!(provider, Provider::Known(KnownProvider::Kimi)) {
+        options.cache = Some(CacheOptions::new(KIMI_CACHE_KEY));
+    }
+
+    Some(options)
 }
 
 fn handle_stream_event(event: AssistantMessageEvent) -> Option<alchemy_llm::Result<Usage>> {

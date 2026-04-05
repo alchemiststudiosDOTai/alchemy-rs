@@ -153,15 +153,25 @@ async fn run_stream_inner(
             cache: options.cache.as_ref(),
         },
     );
-    let request = OpenAiLikeRequest::new_with_cache(
-        &model.provider,
-        &model.base_url,
-        &options.api_key,
-        model.headers.as_ref(),
-        options.headers.as_ref(),
-        &params,
-        cache_preparation,
-    );
+    let request = match cache_preparation {
+        Some(cache_preparation) => OpenAiLikeRequest::new_with_cache(
+            &model.provider,
+            &model.base_url,
+            &options.api_key,
+            model.headers.as_ref(),
+            options.headers.as_ref(),
+            params,
+            cache_preparation,
+        ),
+        None => OpenAiLikeRequest::new(
+            &model.provider,
+            &model.base_url,
+            &options.api_key,
+            model.headers.as_ref(),
+            options.headers.as_ref(),
+            &params,
+        ),
+    };
 
     run_openai_like_stream_without_state::<StreamChunk, _>(
         request,

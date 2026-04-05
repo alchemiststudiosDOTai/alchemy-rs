@@ -51,6 +51,26 @@ Message::Assistant(AssistantMessage)
 Message::ToolResult(ToolResultMessage)
 ```
 
+### Cache options contract
+
+The public request-options surface exposes provider-neutral cache options through `OpenAICompletionsOptions.cache`.
+
+Today that contract is intentionally minimal:
+
+```rust
+CacheOptions {
+    key: String,
+}
+```
+
+Ownership boundaries for cache behavior are strict:
+
+- `src/stream/mod.rs` keeps dispatch ownership
+- provider runtimes keep transport ownership
+- `src/cache/` owns provider-specific cache request mutations and normalized cache usage extraction
+
+Provider runtimes may translate the public cache options shape into provider-native fields, but they must do that translation through `src/cache/` rather than scattering provider-name checks through shared request code.
+
 ### User message shapes
 
 User messages support two content forms:
@@ -213,6 +233,8 @@ Usage data must be accumulated into canonical `Usage` fields:
 
 If a provider reports only part of that data, fill what is known and leave the rest at zero/default.
 
+For OpenAI-like runtimes, the cache layer owns normalization of provider-native cache counters such as `cached_tokens`, `prompt_tokens_details.cached_tokens`, and cache-write fields before they are written into canonical `Usage`.
+
 ## Replay Contract
 
 Replay is where most provider integrations go wrong. The rule is simple:
@@ -253,6 +275,9 @@ Use the shared OpenAI-like helpers when the provider accepts:
 
 Reference files:
 
+- `src/cache/mod.rs`
+- `src/cache/request.rs`
+- `src/cache/usage.rs`
 - `src/providers/shared/openai_like_messages.rs`
 - `src/providers/shared/stream_blocks.rs`
 - `src/providers/shared/openai_like_runtime.rs`
