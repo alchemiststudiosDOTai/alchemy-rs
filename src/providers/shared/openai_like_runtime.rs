@@ -33,44 +33,36 @@ impl<'a> OpenAiLikeRequest<'a> {
         request_headers: Option<&'a HashMap<String, String>>,
         params: &'a serde_json::Value,
     ) -> Self {
-        Self::new_with_cache(
+        Self {
             provider,
-            base_url,
+            base_url: Cow::Borrowed(base_url),
             api_key,
             model_headers,
+            cache_headers: None,
             request_headers,
-            params,
-            None,
-        )
+            params: Cow::Borrowed(params),
+        }
     }
 
     pub(crate) fn new_with_cache(
         provider: &'a Provider,
-        base_url: &'a str,
+        _base_url: &'a str,
         api_key: &'a Option<String>,
         model_headers: Option<&'a HashMap<String, String>>,
         request_headers: Option<&'a HashMap<String, String>>,
-        params: &'a serde_json::Value,
-        cache_preparation: Option<CacheRequestPreparation>,
+        params: serde_json::Value,
+        cache_preparation: CacheRequestPreparation,
     ) -> Self {
-        let prepared_params = apply_cache_request_preparation(params, cache_preparation.as_ref());
+        let prepared_params = apply_cache_request_preparation(&params, Some(&cache_preparation));
 
         Self {
             provider,
-            base_url: cache_preparation
-                .as_ref()
-                .map(|preparation| Cow::Owned(preparation.endpoint.clone()))
-                .unwrap_or_else(|| Cow::Borrowed(base_url)),
+            base_url: Cow::Owned(cache_preparation.endpoint.clone()),
             api_key,
             model_headers,
-            cache_headers: cache_preparation
-                .as_ref()
-                .map(|preparation| preparation.headers.clone()),
+            cache_headers: Some(cache_preparation.headers.clone()),
             request_headers,
-            params: match cache_preparation {
-                Some(_) => Cow::Owned(prepared_params),
-                None => Cow::Borrowed(params),
-            },
+            params: Cow::Owned(prepared_params),
         }
     }
 }

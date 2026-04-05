@@ -253,9 +253,37 @@ mod tests {
         }
     }
 
+    fn kimi_test_model(base_url: &str) -> Model<AnthropicMessages> {
+        Model {
+            id: "kimi-coding".to_string(),
+            name: "Kimi K2.5".to_string(),
+            api: AnthropicMessages,
+            provider: Provider::Known(KnownProvider::Kimi),
+            base_url: base_url.to_string(),
+            reasoning: true,
+            input: vec![InputType::Text],
+            cost: ModelCost {
+                input: 0.0,
+                output: 0.0,
+                cache_read: 0.0,
+                cache_write: 0.0,
+            },
+            context_window: 128_000,
+            max_tokens: 16_384,
+            headers: None,
+            compat: None,
+        }
+    }
+
     #[tokio::test]
     async fn stream_dispatches_to_anthropic_provider() {
         let model = anthropic_test_model("http://127.0.0.1:1");
+        assert_dispatches_to_provider(model, Api::AnthropicMessages).await;
+    }
+
+    #[tokio::test]
+    async fn stream_dispatches_to_kimi_provider() {
+        let model = kimi_test_model("http://127.0.0.1:1/coding");
         assert_dispatches_to_provider(model, Api::AnthropicMessages).await;
     }
 

@@ -7,9 +7,7 @@ mod openai_like_runtime;
 mod stream_blocks;
 mod timestamp;
 
-pub(crate) use anthropic_like::{
-    stream_anthropic_like_messages, AnthropicLikeAuth, AnthropicLikeProviderConfig,
-};
+pub(crate) use anthropic_like::{stream_anthropic_like_messages, AnthropicLikeProviderConfig};
 pub(crate) use http::merge_headers;
 pub(crate) use openai_like_messages::{
     convert_messages, convert_tools, AssistantThinkingMode, OpenAiLikeMessageOptions,

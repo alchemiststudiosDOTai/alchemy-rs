@@ -48,7 +48,7 @@ env: {target: "local", notes: ""}
 
 ### T003 - Thread cache capability hooks through shared request and usage plumbing
 - Status: completed
-- Commit: pending
+- Commit: cb3bf24
 - Files: src/providers/shared/openai_like_runtime.rs, src/providers/shared/http.rs, src/providers/shared/stream_blocks.rs, src/providers/openai_completions.rs, src/cache/request.rs, src/cache/usage.rs
 - Commands:
   - `cargo fmt --all` -> pass
@@ -59,7 +59,17 @@ env: {target: "local", notes: ""}
 - Notes: added a cache-aware request preparation seam, deterministic model->cache->request header merging, and routed OpenAI-like cache token normalization through `src/cache/usage.rs`.
 
 ### T004 - Migrate the Kimi runtime onto the cache capability layer while preserving the public Anthropic model
-- Status: pending
+- Status: completed
+- Commit: pending
+- Files: src/providers/kimi.rs, src/stream/mod.rs, src/models/kimi.rs, src/providers/shared/openai_like_runtime.rs
+- Commands:
+  - `cargo fmt --all` -> pass
+  - `cargo test kimi_runtime_builds_chat_completions_request_with_cache_contract` -> pass
+  - `cargo test stream_dispatches_to_kimi_provider` -> pass
+  - `cargo test kimi_process_chunk_preserves_text_reasoning_and_tool_calls` -> pass
+- Tests: pass
+- Coverage delta: not measured
+- Notes: replaced the Anthropic-like Kimi runtime with an OpenAI-like chat-completions runtime that still emits `Api::AnthropicMessages` and preserves the public `kimi-coding` model identity.
 
 ### T005 - Remove obsolete cache logic and codify the new pattern in developer docs
 - Status: pending

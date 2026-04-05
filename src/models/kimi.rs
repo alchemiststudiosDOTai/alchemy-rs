@@ -10,11 +10,11 @@ const ZERO_MODEL_COST: ModelCost = ModelCost {
     cache_write: 0.0,
 };
 
-/// Build the first-class Kimi Coding model on the shared Anthropic-style path.
+/// Build the first-class Kimi Coding model with an Anthropic-typed public surface.
 ///
-/// The Kimi Coding API matches the Anthropic Messages request/stream shape closely
-/// enough to reuse the same runtime contract while keeping Kimi as its own
-/// provider identity and auth/base URL configuration.
+/// The crate keeps Kimi publicly typed as `Model<AnthropicMessages>` so callers
+/// continue to use the Anthropic-shaped event contract, while the runtime can
+/// translate requests onto the cache-capable Kimi chat completions transport.
 pub fn kimi_k2_5() -> Model<AnthropicMessages> {
     Model {
         id: "kimi-coding".to_string(),

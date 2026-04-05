@@ -15,14 +15,7 @@ use crate::types::{
 const THINKING_SIGNATURE: &str = "thinking";
 
 #[derive(Clone, Copy)]
-pub(crate) enum AnthropicLikeAuth {
-    XApiKey,
-    Bearer,
-}
-
-#[derive(Clone, Copy)]
 pub(crate) struct AnthropicLikeProviderConfig {
-    pub auth: AnthropicLikeAuth,
     pub messages_endpoint: &'static str,
     pub version_header: Option<(&'static str, &'static str)>,
     pub beta_header: Option<(&'static str, &'static str)>,
@@ -126,27 +119,15 @@ fn build_headers(
     model: &Model<AnthropicMessages>,
     options: &crate::providers::OpenAICompletionsOptions,
 ) -> Result<reqwest::header::HeaderMap, crate::Error> {
-    use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
+    use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE};
 
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
-    match config.auth {
-        AnthropicLikeAuth::XApiKey => {
-            headers.insert(
-                HeaderName::from_static("x-api-key"),
-                HeaderValue::from_str(api_key)
-                    .map_err(|e| crate::Error::InvalidHeader(e.to_string()))?,
-            );
-        }
-        AnthropicLikeAuth::Bearer => {
-            headers.insert(
-                AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {api_key}"))
-                    .map_err(|e| crate::Error::InvalidHeader(e.to_string()))?,
-            );
-        }
-    }
+    headers.insert(
+        HeaderName::from_static("x-api-key"),
+        HeaderValue::from_str(api_key).map_err(|e| crate::Error::InvalidHeader(e.to_string()))?,
+    );
 
     if let Some((name, value)) = config.version_header {
         headers.insert(
@@ -466,8 +447,6 @@ mod tests {
     };
     use futures::executor::block_on;
     use futures::StreamExt;
-    use reqwest::header::AUTHORIZATION;
-
     fn make_model(provider: KnownProvider, reasoning: bool) -> Model<AnthropicMessages> {
         Model {
             id: match provider {
@@ -599,7 +578,6 @@ mod tests {
     fn build_client_uses_x_api_key_for_anthropic() {
         let headers = build_headers(
             AnthropicLikeProviderConfig {
-                auth: AnthropicLikeAuth::XApiKey,
                 messages_endpoint: "/v1/messages",
                 version_header: Some(("anthropic-version", "2023-06-01")),
                 beta_header: Some(("anthropic-beta", "interleaved-thinking-2025-05-14")),
@@ -621,30 +599,6 @@ mod tests {
                 .expect("anthropic-version should exist"),
             "2023-06-01"
         );
-    }
-
-    #[test]
-    fn build_client_uses_bearer_auth_for_kimi() {
-        let headers = build_headers(
-            AnthropicLikeProviderConfig {
-                auth: AnthropicLikeAuth::Bearer,
-                messages_endpoint: "/v1/messages",
-                version_header: None,
-                beta_header: None,
-            },
-            "test-key",
-            &make_model(KnownProvider::Kimi, false),
-            &OpenAICompletionsOptions::default(),
-        )
-        .expect("headers should build");
-        assert_eq!(
-            headers
-                .get(AUTHORIZATION)
-                .expect("authorization header should exist"),
-            "Bearer test-key"
-        );
-        assert!(headers.get("anthropic-version").is_none());
-        assert!(headers.get("anthropic-beta").is_none());
     }
 
     #[test]
