@@ -11,12 +11,18 @@ pub trait StreamOptions: Send + Sync {
     fn api_key(&self) -> Option<&str> {
         None
     }
-    fn session_id(&self) -> Option<&str> {
+    fn cache(&self) -> Option<&CacheOptions> {
         None
     }
     fn headers(&self) -> Option<&HashMap<String, String>> {
         None
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CacheOptions {
+    pub key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,8 +45,8 @@ impl StreamOptions for SimpleStreamOptions {
     fn api_key(&self) -> Option<&str> {
         self.base.api_key.as_deref()
     }
-    fn session_id(&self) -> Option<&str> {
-        self.base.session_id.as_deref()
+    fn cache(&self) -> Option<&CacheOptions> {
+        self.base.cache.as_ref()
     }
     fn headers(&self) -> Option<&HashMap<String, String>> {
         self.base.headers.as_ref()
@@ -56,7 +62,7 @@ pub struct BaseStreamOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
+    pub cache: Option<CacheOptions>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
 }
@@ -83,4 +89,53 @@ pub struct ThinkingBudgets {
     pub medium: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub high: Option<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BaseStreamOptions, CacheOptions, SimpleStreamOptions};
+    use crate::providers::OpenAICompletionsOptions;
+    use serde_json::json;
+
+    #[test]
+    fn cache_options_replace_session_id_in_public_options() {
+        let cache = CacheOptions {
+            key: "cache-key".to_string(),
+        };
+
+        let base_json = serde_json::to_value(BaseStreamOptions {
+            temperature: None,
+            max_tokens: None,
+            api_key: None,
+            cache: Some(cache.clone()),
+            headers: None,
+        })
+        .expect("base options serialize");
+        assert_eq!(base_json["cache"], json!({ "key": "cache-key" }));
+        assert!(base_json.get("session_id").is_none());
+
+        let simple_json = serde_json::to_value(SimpleStreamOptions {
+            base: BaseStreamOptions {
+                temperature: None,
+                max_tokens: None,
+                api_key: None,
+                cache: Some(cache.clone()),
+                headers: None,
+            },
+            reasoning: None,
+            thinking_budgets: None,
+        })
+        .expect("simple options serialize");
+        assert_eq!(simple_json["cache"], json!({ "key": "cache-key" }));
+        assert!(simple_json.get("session_id").is_none());
+
+        let options = OpenAICompletionsOptions {
+            cache: Some(cache),
+            ..OpenAICompletionsOptions::default()
+        };
+        assert_eq!(
+            options.cache.as_ref().map(|cache| cache.key.as_str()),
+            Some("cache-key")
+        );
+    }
 }

@@ -24,7 +24,7 @@ pub use model::{
     AnthropicMessages, BedrockConverseStream, GoogleGenerativeAi, GoogleVertex, InputType,
     MinimaxCompletions, Model, OpenAICompletions, OpenAIResponses, ZaiCompletions,
 };
-pub use options::{SimpleStreamOptions, StreamOptions, ThinkingLevel};
+pub use options::{CacheOptions, SimpleStreamOptions, StreamOptions, ThinkingLevel};
 pub use tool::Tool;
 pub use tool_call_id::ToolCallId;
 pub use usage::{Cost, ModelCost, StopReason, Usage};

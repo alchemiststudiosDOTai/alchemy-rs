@@ -13,8 +13,8 @@ use super::shared::{
     SystemPromptRole,
 };
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEventStream, Context, EventStreamSender, KnownProvider,
-    MaxTokensField, Model, OpenAICompletions, OpenAICompletionsCompat, Provider,
+    Api, AssistantMessage, AssistantMessageEventStream, CacheOptions, Context, EventStreamSender,
+    KnownProvider, MaxTokensField, Model, OpenAICompletions, OpenAICompletionsCompat, Provider,
 };
 
 /// Options for OpenAI completions streaming.
@@ -23,6 +23,7 @@ pub struct OpenAICompletionsOptions {
     pub api_key: Option<String>,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
+    pub cache: Option<CacheOptions>,
     pub tool_choice: Option<ToolChoice>,
     pub reasoning_effort: Option<ReasoningEffort>,
     pub headers: Option<HashMap<String, String>>,
