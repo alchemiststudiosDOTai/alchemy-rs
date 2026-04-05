@@ -12,6 +12,8 @@ use super::shared::{
     OpenAiLikeRequest, OpenAiLikeStreamChunk, OpenAiLikeToolCallDelta, ReasoningDelta,
     SystemPromptRole,
 };
+use crate::cache::capability::cache_capability_for;
+use crate::cache::request::{prepare_cache_request, CacheRequestInput};
 use crate::types::{
     Api, AssistantMessage, AssistantMessageEventStream, CacheOptions, Context, EventStreamSender,
     KnownProvider, MaxTokensField, Model, OpenAICompletions, OpenAICompletionsCompat, Provider,
@@ -143,13 +145,22 @@ async fn run_stream_inner(
 ) -> Result<(), crate::Error> {
     let compat = resolve_compat(model);
     let params = build_params(model, context, options, &compat);
-    let request = OpenAiLikeRequest::new(
+    let cache_preparation = prepare_cache_request(
+        cache_capability_for(&model.provider),
+        CacheRequestInput {
+            base_url: &model.base_url,
+            model_id: &model.id,
+            cache: options.cache.as_ref(),
+        },
+    );
+    let request = OpenAiLikeRequest::new_with_cache(
         &model.provider,
         &model.base_url,
         &options.api_key,
         model.headers.as_ref(),
         options.headers.as_ref(),
         &params,
+        cache_preparation,
     );
 
     run_openai_like_stream_without_state::<StreamChunk, _>(

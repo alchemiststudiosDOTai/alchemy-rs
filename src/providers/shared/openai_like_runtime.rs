@@ -1,8 +1,10 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
 
+use crate::cache::request::{apply_cache_request_preparation, CacheRequestPreparation};
 use crate::types::{
     Api, AssistantMessage, AssistantMessageEvent, EventStreamSender, Provider, StopReason,
     StopReasonError, StopReasonSuccess, Usage,
@@ -14,11 +16,12 @@ use super::timestamp::unix_timestamp_millis;
 
 pub(crate) struct OpenAiLikeRequest<'a> {
     pub provider: &'a Provider,
-    pub base_url: &'a str,
+    pub base_url: Cow<'a, str>,
     pub api_key: &'a Option<String>,
     pub model_headers: Option<&'a HashMap<String, String>>,
+    pub cache_headers: Option<HashMap<String, String>>,
     pub request_headers: Option<&'a HashMap<String, String>>,
-    pub params: &'a serde_json::Value,
+    pub params: Cow<'a, serde_json::Value>,
 }
 
 impl<'a> OpenAiLikeRequest<'a> {
@@ -30,13 +33,44 @@ impl<'a> OpenAiLikeRequest<'a> {
         request_headers: Option<&'a HashMap<String, String>>,
         params: &'a serde_json::Value,
     ) -> Self {
-        Self {
+        Self::new_with_cache(
             provider,
             base_url,
             api_key,
             model_headers,
             request_headers,
             params,
+            None,
+        )
+    }
+
+    pub(crate) fn new_with_cache(
+        provider: &'a Provider,
+        base_url: &'a str,
+        api_key: &'a Option<String>,
+        model_headers: Option<&'a HashMap<String, String>>,
+        request_headers: Option<&'a HashMap<String, String>>,
+        params: &'a serde_json::Value,
+        cache_preparation: Option<CacheRequestPreparation>,
+    ) -> Self {
+        let prepared_params = apply_cache_request_preparation(params, cache_preparation.as_ref());
+
+        Self {
+            provider,
+            base_url: cache_preparation
+                .as_ref()
+                .map(|preparation| Cow::Owned(preparation.endpoint.clone()))
+                .unwrap_or_else(|| Cow::Borrowed(base_url)),
+            api_key,
+            model_headers,
+            cache_headers: cache_preparation
+                .as_ref()
+                .map(|preparation| preparation.headers.clone()),
+            request_headers,
+            params: match cache_preparation {
+                Some(_) => Cow::Owned(prepared_params),
+                None => Cow::Borrowed(params),
+            },
         }
     }
 }
@@ -109,8 +143,14 @@ where
     ),
 {
     let api_key = require_api_key(request.api_key, request.provider)?;
-    let client = build_http_client(api_key, request.model_headers, request.request_headers)?;
-    let response = send_streaming_request(&client, request.base_url, request.params).await?;
+    let client = build_http_client(
+        api_key,
+        request.model_headers,
+        request.cache_headers.as_ref(),
+        request.request_headers,
+    )?;
+    let response =
+        send_streaming_request(&client, request.base_url.as_ref(), request.params.as_ref()).await?;
 
     sender.push(AssistantMessageEvent::Start {
         partial: output.clone(),

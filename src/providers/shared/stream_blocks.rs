@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+use crate::cache::usage::{normalize_openai_like_cache_usage, OpenAiLikeCacheUsage};
 use crate::types::{
     AssistantMessage, AssistantMessageEvent, Content, EventStreamSender, StopReason, ToolCall,
     Usage,
@@ -66,6 +67,7 @@ pub(crate) struct OpenAiLikeStreamUsage {
     pub total_tokens: Option<u32>,
     pub cache_read_input_tokens: Option<u32>,
     pub cache_creation_input_tokens: Option<u32>,
+    pub cached_tokens: Option<u32>,
     pub cost: Option<f64>,
     pub cost_details: Option<StreamCostDetails>,
     pub prompt_tokens_details: Option<PromptTokensDetails>,
@@ -96,25 +98,19 @@ pub(crate) fn update_usage_from_chunk(
     usage: &OpenAiLikeStreamUsage,
     output: &mut AssistantMessage,
 ) {
-    let cache_read_tokens = usage
-        .cache_read_input_tokens
-        .or_else(|| {
-            usage
-                .prompt_tokens_details
-                .as_ref()
-                .and_then(|details| details.cached_tokens)
-        })
-        .unwrap_or(0);
-
-    let cache_write_tokens = usage
-        .cache_creation_input_tokens
-        .or_else(|| {
-            usage
-                .prompt_tokens_details
-                .as_ref()
-                .and_then(|details| details.cache_write_tokens)
-        })
-        .unwrap_or(0);
+    let normalized_cache_usage = normalize_openai_like_cache_usage(OpenAiLikeCacheUsage {
+        cache_read_input_tokens: usage.cache_read_input_tokens,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens,
+        cached_tokens: usage.cached_tokens,
+        prompt_cached_tokens: usage
+            .prompt_tokens_details
+            .as_ref()
+            .and_then(|details| details.cached_tokens),
+        prompt_cache_write_tokens: usage
+            .prompt_tokens_details
+            .as_ref()
+            .and_then(|details| details.cache_write_tokens),
+    });
 
     let input_tokens = usage.prompt_tokens;
     let output_tokens = usage.completion_tokens;
@@ -154,8 +150,8 @@ pub(crate) fn update_usage_from_chunk(
     output.usage = Usage {
         input: input_tokens,
         output: output_tokens,
-        cache_read: cache_read_tokens,
-        cache_write: cache_write_tokens,
+        cache_read: normalized_cache_usage.cache_read_tokens,
+        cache_write: normalized_cache_usage.cache_write_tokens,
         total_tokens,
         cost: crate::types::Cost {
             input: cost_input,

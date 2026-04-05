@@ -37,7 +37,7 @@ env: {target: "local", notes: ""}
 
 ### T002 - Create the central cache capability layer
 - Status: completed
-- Commit: pending
+- Commit: cc10ea8
 - Files: src/cache/mod.rs, src/cache/capability.rs, src/cache/request.rs, src/cache/usage.rs, src/lib.rs
 - Commands:
   - `cargo fmt --all` -> pass
@@ -47,7 +47,16 @@ env: {target: "local", notes: ""}
 - Notes: added an internal cache capability contract, Kimi request mutations for chat-completions transport, and a normalized OpenAI-like cache usage helper.
 
 ### T003 - Thread cache capability hooks through shared request and usage plumbing
-- Status: pending
+- Status: completed
+- Commit: pending
+- Files: src/providers/shared/openai_like_runtime.rs, src/providers/shared/http.rs, src/providers/shared/stream_blocks.rs, src/providers/openai_completions.rs, src/cache/request.rs, src/cache/usage.rs
+- Commands:
+  - `cargo fmt --all` -> pass
+  - `cargo test cache_usage_normalizer_reads_openai_cached_token_fields` -> pass
+  - `cargo test merge_header_layers_applies_deterministic_precedence` -> pass
+- Tests: pass
+- Coverage delta: not measured
+- Notes: added a cache-aware request preparation seam, deterministic model->cache->request header merging, and routed OpenAI-like cache token normalization through `src/cache/usage.rs`.
 
 ### T004 - Migrate the Kimi runtime onto the cache capability layer while preserving the public Anthropic model
 - Status: pending

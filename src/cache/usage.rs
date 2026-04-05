@@ -8,6 +8,7 @@ pub(crate) struct NormalizedCacheUsage {
 pub(crate) struct OpenAiLikeCacheUsage {
     pub cache_read_input_tokens: Option<u32>,
     pub cache_creation_input_tokens: Option<u32>,
+    pub cached_tokens: Option<u32>,
     pub prompt_cached_tokens: Option<u32>,
     pub prompt_cache_write_tokens: Option<u32>,
 }
@@ -18,6 +19,7 @@ pub(crate) fn normalize_openai_like_cache_usage(
     NormalizedCacheUsage {
         cache_read_tokens: usage
             .cache_read_input_tokens
+            .or(usage.cached_tokens)
             .or(usage.prompt_cached_tokens)
             .unwrap_or(0),
         cache_write_tokens: usage
@@ -36,6 +38,7 @@ mod tests {
         let usage = normalize_openai_like_cache_usage(OpenAiLikeCacheUsage {
             cache_read_input_tokens: Some(12),
             cache_creation_input_tokens: Some(8),
+            cached_tokens: Some(6),
             prompt_cached_tokens: Some(3),
             prompt_cache_write_tokens: Some(2),
         });
@@ -47,5 +50,20 @@ mod tests {
                 cache_write_tokens: 8,
             }
         );
+    }
+
+    #[test]
+    fn cache_usage_normalizer_reads_openai_cached_token_fields() {
+        let top_level = normalize_openai_like_cache_usage(OpenAiLikeCacheUsage {
+            cached_tokens: Some(11),
+            ..OpenAiLikeCacheUsage::default()
+        });
+        assert_eq!(top_level.cache_read_tokens, 11);
+
+        let nested = normalize_openai_like_cache_usage(OpenAiLikeCacheUsage {
+            prompt_cached_tokens: Some(7),
+            ..OpenAiLikeCacheUsage::default()
+        });
+        assert_eq!(nested.cache_read_tokens, 7);
     }
 }

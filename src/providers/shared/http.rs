@@ -8,6 +8,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT
 pub fn build_http_client(
     api_key: &str,
     model_headers: Option<&HashMap<String, String>>,
+    cache_headers: Option<&HashMap<String, String>>,
     extra_headers: Option<&HashMap<String, String>>,
 ) -> Result<reqwest::Client, crate::Error> {
     let mut headers = HeaderMap::new();
@@ -18,8 +19,7 @@ pub fn build_http_client(
             .map_err(|e| crate::Error::InvalidHeader(e.to_string()))?,
     );
 
-    merge_headers(&mut headers, model_headers);
-    merge_headers(&mut headers, extra_headers);
+    merge_header_layers(&mut headers, model_headers, cache_headers, extra_headers);
 
     reqwest::Client::builder()
         .default_headers(headers)
@@ -40,6 +40,18 @@ pub fn merge_headers(target: &mut HeaderMap, source: Option<&HashMap<String, Str
             target.insert(name, val);
         }
     }
+}
+
+/// Merge optional header layers in deterministic order.
+pub fn merge_header_layers(
+    target: &mut HeaderMap,
+    model_headers: Option<&HashMap<String, String>>,
+    cache_headers: Option<&HashMap<String, String>>,
+    extra_headers: Option<&HashMap<String, String>>,
+) {
+    merge_headers(target, model_headers);
+    merge_headers(target, cache_headers);
+    merge_headers(target, extra_headers);
 }
 
 #[cfg(test)]
@@ -74,5 +86,27 @@ mod tests {
         target.insert("X-Existing", HeaderValue::from_static("value"));
         merge_headers(&mut target, None);
         assert_eq!(target.len(), 1);
+    }
+
+    #[test]
+    fn merge_header_layers_applies_deterministic_precedence() {
+        let mut target = HeaderMap::new();
+        let model_headers = HashMap::from([("User-Agent".to_string(), "model".to_string())]);
+        let cache_headers = HashMap::from([("User-Agent".to_string(), "cache".to_string())]);
+        let request_headers = HashMap::from([("User-Agent".to_string(), "request".to_string())]);
+
+        merge_header_layers(
+            &mut target,
+            Some(&model_headers),
+            Some(&cache_headers),
+            Some(&request_headers),
+        );
+
+        assert_eq!(
+            target
+                .get("User-Agent")
+                .and_then(|value| value.to_str().ok()),
+            Some("request")
+        );
     }
 }

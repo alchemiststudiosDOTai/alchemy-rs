@@ -72,14 +72,14 @@ async fn run_stream_inner(
     sender: &mut EventStreamSender,
 ) -> Result<(), crate::Error> {
     let params = build_params(model, context, options);
-    let request = OpenAiLikeRequest {
-        provider: &model.provider,
-        base_url: &model.base_url,
-        api_key: &options.api_key,
-        model_headers: model.headers.as_ref(),
-        request_headers: options.headers.as_ref(),
-        params: &params,
-    };
+    let request = OpenAiLikeRequest::new(
+        &model.provider,
+        &model.base_url,
+        &options.api_key,
+        model.headers.as_ref(),
+        options.headers.as_ref(),
+        &params,
+    );
 
     let mut think_tag_parser = ThinkTagParser::new();
 
