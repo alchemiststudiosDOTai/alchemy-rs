@@ -1,0 +1,96 @@
+== provider=minimax ==
+model.name=MiniMax M2.7
+model.id=MiniMax-M2.7
+model.base_url=https://api.minimax.io/v1/chat/completions
+passes=5
+prompt_chars=11698
+[cache-target] stable_prefix_chars=11647 target_input_tokens=512
+-- pass=1 --
+[start] api=MinimaxCompletions provider=minimax model=MiniMax-M2.7
+[thinking-start] index=0
+[thinking-delta] The user
+[thinking-delta]  message is a huge repetition of the same phrase: "Stable MiniMax cache prefix sentence for repeated requests. Preserve this wording exactly." and then at
+[thinking-delta]  the bottom: "Final instruction: Reply with exactly: minimax ok"
+
+They want the assistant to reply with exactly "minimax ok". The instructions say
+[thinking-end] index=0 content=The user message is a huge repetition of the same phrase: "Stable MiniMax cache prefix sentence for repeated requests. Preserve this wording exactly." and then at the bottom: "Final instruction: Reply with exactly: minimax ok"
+
+They want the assistant to reply with exactly "minimax ok". The instructions say
+[done] stop_reason=Length
+[usage] input=1953 output=64 cache_read=0 cache_write=0 total=2017
+[cache-pass] hit=false write=false read_tokens=0 write_tokens=0
+[cache-compare] prev_read=n/a prev_write=n/a curr_read=0 curr_write=0
+-- pass=2 --
+[start] api=MinimaxCompletions provider=minimax model=MiniMax-M2.7
+[thinking-start] index=0
+[thinking-delta] The
+[thinking-delta]  user says: "Stable MiniMax cache prefix sentence for repeated requests. Preserve this wording exactly." Then repeated many times (like 
+[thinking-delta] 100 copies). Then final instruction: "Reply with exactly: minimax ok"
+
+So I need to output exactly "minimax ok". No extra spaces
+[thinking-delta]  or punctuation. That's it
+[thinking-end] index=0 content=The user says: "Stable MiniMax cache prefix sentence for repeated requests. Preserve this wording exactly." Then repeated many times (like 100 copies). Then final instruction: "Reply with exactly: minimax ok"
+
+So I need to output exactly "minimax ok". No extra spaces or punctuation. That's it
+[done] stop_reason=Length
+[usage] input=1953 output=64 cache_read=1787 cache_write=0 total=2017
+[cache-pass] hit=true write=false read_tokens=1787 write_tokens=0
+[cache-compare] prev_read=0 prev_write=0 curr_read=1787 curr_write=0
+-- pass=3 --
+[start] api=MinimaxCompletions provider=minimax model=MiniMax-M2.7
+[thinking-start] index=0
+[thinking-delta] The
+[thinking-delta]  user wants: "Reply with exactly: minimax ok". They want the final output to be exactly "minimax
+[thinking-delta]  ok". The instruction says "Reply with exactly: minimax ok". So we just output that.
+[thinking-end] index=0 content=The user wants: "Reply with exactly: minimax ok". They want the final output to be exactly "minimax ok". The instruction says "Reply with exactly: minimax ok". So we just output that.
+[text-start] index=1
+[text-delta] minimax ok
+[text-end] index=1 content=minimax ok
+[done] stop_reason=Stop
+[usage] input=1953 output=51 cache_read=1787 cache_write=0 total=2004
+[cache-pass] hit=true write=false read_tokens=1787 write_tokens=0
+[cache-compare] prev_read=1787 prev_write=0 curr_read=1787 curr_write=0
+-- pass=4 --
+[start] api=MinimaxCompletions provider=minimax model=MiniMax-M2.7
+[thinking-start] index=0
+[thinking-delta] The
+[thinking-delta]  user is asking: "Stable MiniMax cache prefix sentence for repeated requests. Preserve this wording exactly." Then repeated many times. Then final instruction: "Reply with exactly: minimax ok". The user
+[thinking-delta]  wants a response that is exactly "minimax ok". But we have to be careful about the instructions.
+[thinking-end] index=0 content=The user is asking: "Stable MiniMax cache prefix sentence for repeated requests. Preserve this wording exactly." Then repeated many times. Then final instruction: "Reply with exactly: minimax ok". The user wants a response that is exactly "minimax ok". But we have to be careful about the instructions.
+[done] stop_reason=Length
+[usage] input=1953 output=64 cache_read=1787 cache_write=0 total=2017
+[cache-pass] hit=true write=false read_tokens=1787 write_tokens=0
+[cache-compare] prev_read=1787 prev_write=0 curr_read=1787 curr_write=0
+-- pass=5 --
+[start] api=MinimaxCompletions provider=minimax model=MiniMax-M2.7
+[thinking-start] index=0
+[thinking-delta] The
+[thinking-delta]  user asks:
+
+"Stable MiniMax cache prefix sentence for repeated requests. Preserve this wording exactly."
+
+Then there is a huge repetition of the same phrase many times.
+
+Finally, final
+[thinking-delta]  instruction: "Reply with exactly: minimax ok"
+
+Thus I must comply: The user wants a "Stable MiniMax cache prefix
+[thinking-end] index=0 content=The user asks:
+
+"Stable MiniMax cache prefix sentence for repeated requests. Preserve this wording exactly."
+
+Then there is a huge repetition of the same phrase many times.
+
+Finally, final instruction: "Reply with exactly: minimax ok"
+
+Thus I must comply: The user wants a "Stable MiniMax cache prefix
+[done] stop_reason=Length
+[usage] input=1953 output=64 cache_read=1787 cache_write=0 total=2017
+[cache-pass] hit=true write=false read_tokens=1787 write_tokens=0
+[cache-compare] prev_read=1787 prev_write=0 curr_read=1787 curr_write=0
+== cache summary ==
+total_passes=5
+cache_hit_passes=4
+cache_write_passes=0
+no_cache_passes=1
+

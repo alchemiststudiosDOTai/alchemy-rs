@@ -76,3 +76,23 @@
 - If you change ast-grep rules, run `make ast-rules` explicitly.
 - If you change provider auth or docs, verify env var names against both `.env.example` and `src/providers/env.rs`.
 - Keep this file compact; link to source docs instead of copying detailed policy.
+
+<!-- DARK_FOREST:START -->
+## Dark Forest
+
+This repository uses the Dark Forest workflow scaffold.
+
+Read in this order:
+
+- `.darkforest/index.md`
+- `.darkforest/operations/README.md`
+- the newest file in `.darkforest/operations/active/`, or `.darkforest/operations/operation-template.md` if no active operation exists
+- `.darkforest/session-log.md`
+- `.darkforest/inventory/work.json`
+
+Routing:
+
+- Use `dark-forest-bootstrap` only for first adoption or major rescoping.
+- Use `dark-forest-lite` by default.
+- Use `dark-forest-gates` when an invariant needs mechanical proof.
+<!-- DARK_FOREST:END -->
