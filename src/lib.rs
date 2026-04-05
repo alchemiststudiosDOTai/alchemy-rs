@@ -1,3 +1,4 @@
+pub(crate) mod cache;
 pub mod error;
 pub mod models;
 pub mod providers;

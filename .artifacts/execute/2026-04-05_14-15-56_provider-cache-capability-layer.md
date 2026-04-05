@@ -26,7 +26,7 @@ env: {target: "local", notes: ""}
 
 ### T001 - Replace legacy session identity with a public cache contract
 - Status: completed
-- Commit: pending
+- Commit: 39f4bd0
 - Files: src/types/options.rs, src/types/mod.rs, src/providers/openai_completions.rs, src/lib.rs
 - Commands:
   - `cargo fmt --all` -> pass
@@ -36,7 +36,15 @@ env: {target: "local", notes: ""}
 - Notes: added public `CacheOptions`, removed `session_id` from the shared options types, and wired the new cache field into `OpenAICompletionsOptions`.
 
 ### T002 - Create the central cache capability layer
-- Status: pending
+- Status: completed
+- Commit: pending
+- Files: src/cache/mod.rs, src/cache/capability.rs, src/cache/request.rs, src/cache/usage.rs, src/lib.rs
+- Commands:
+  - `cargo fmt --all` -> pass
+  - `cargo test kimi_cache_capability_returns_request_mutations` -> pass
+- Tests: pass
+- Coverage delta: not measured
+- Notes: added an internal cache capability contract, Kimi request mutations for chat-completions transport, and a normalized OpenAI-like cache usage helper.
 
 ### T003 - Thread cache capability hooks through shared request and usage plumbing
 - Status: pending
