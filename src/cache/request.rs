@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::cache::capability::ProviderCacheCapability;
+use crate::cache::kimi_cache_capability::ProviderCacheCapability;
 use crate::types::CacheOptions;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

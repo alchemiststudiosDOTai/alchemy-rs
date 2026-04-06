@@ -225,7 +225,7 @@ let options = OpenAICompletionsOptions {
 };
 ```
 
-On the Kimi transport, the cache layer maps this public cache options shape onto `prompt_cache_key` and injects `User-Agent: KimiCLI/1.29.0` for the request.
+On the Kimi transport, the Kimi-specific cache capability maps this public cache options shape onto `prompt_cache_key` and injects `User-Agent: KimiCLI/1.29.0` for the request. The translation lives in `src/cache/kimi_cache_capability.rs`.
 
 ## Development
 

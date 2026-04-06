@@ -11,7 +11,7 @@ use super::shared::{
     OpenAiLikeMessageOptions, OpenAiLikeRequest, OpenAiLikeStreamChunk, OpenAiLikeToolCallDelta,
     ReasoningDelta, SystemPromptRole,
 };
-use crate::cache::capability::cache_capability_for;
+use crate::cache::kimi_cache_capability::cache_capability_for;
 use crate::cache::request::{prepare_cache_request, CacheRequestInput};
 use crate::types::{
     AnthropicMessages, Api, AssistantMessage, AssistantMessageEventStream, Context,

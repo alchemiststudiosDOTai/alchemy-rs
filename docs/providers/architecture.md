@@ -67,9 +67,9 @@ Ownership boundaries for cache behavior are strict:
 
 - `src/stream/mod.rs` keeps dispatch ownership
 - provider runtimes keep transport ownership
-- `src/cache/` owns provider-specific cache request mutations and normalized cache usage extraction
+- `src/cache/` owns cache request shaping and normalized cache usage extraction
 
-Provider runtimes may translate the public cache options shape into provider-native fields, but they must do that translation through `src/cache/` rather than scattering provider-name checks through shared request code.
+Provider runtimes may translate the public cache options shape into provider-native fields, but they must do that translation through `src/cache/` rather than scattering provider-name checks through shared request code. Today the provider-specific translation module is `src/cache/kimi_cache_capability.rs`.
 
 ### User message shapes
 
@@ -276,6 +276,7 @@ Use the shared OpenAI-like helpers when the provider accepts:
 Reference files:
 
 - `src/cache/mod.rs`
+- `src/cache/kimi_cache_capability.rs`
 - `src/cache/request.rs`
 - `src/cache/usage.rs`
 - `src/providers/shared/openai_like_messages.rs`
