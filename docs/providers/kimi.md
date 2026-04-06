@@ -99,6 +99,8 @@ The Kimi runtime maps that provider-neutral cache options shape onto the transpo
 - request body field: `prompt_cache_key`
 - transport model id: `kimi-for-coding`
 
+That provider translation is implemented in `src/cache/kimi_cache_capability.rs`.
+
 The public output model identity remains `kimi-coding`, so callers keep the same crate-level replay and event contract.
 
 ## Live Validation Notes
@@ -117,7 +119,7 @@ Implementation and integration points live in:
 
 - `src/models/kimi.rs`
 - `src/providers/kimi.rs`
-- `src/cache/capability.rs`
+- `src/cache/kimi_cache_capability.rs`
 - `src/cache/request.rs`
 - `src/providers/shared/openai_like_runtime.rs`
 - `src/providers/shared/openai_like_messages.rs`
