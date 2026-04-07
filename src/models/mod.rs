@@ -1,11 +1,13 @@
 pub mod anthropic;
 pub mod featherless;
+pub mod google;
 pub mod kimi;
 pub mod minimax;
 pub mod zai;
 
 pub use anthropic::{claude_haiku_4_5, claude_opus_4_6, claude_sonnet_4_6};
 pub use featherless::featherless_model;
+pub use google::{gemini_2_5_flash, gemini_2_5_pro};
 pub use kimi::kimi_k2_5;
 pub use minimax::{
     minimax_cn_m2, minimax_cn_m2_1, minimax_cn_m2_1_highspeed, minimax_cn_m2_5,

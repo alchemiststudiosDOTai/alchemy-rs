@@ -2,12 +2,13 @@ pub use crate::types::{AssistantMessageEventStream, EventStreamSender};
 
 use crate::error::{Error, Result};
 use crate::providers::{
-    get_env_api_key, stream_anthropic_messages, stream_kimi_messages, stream_minimax_completions,
-    stream_openai_completions, stream_zai_completions, OpenAICompletionsOptions,
+    get_env_api_key, stream_anthropic_messages, stream_google_generative_ai, stream_kimi_messages,
+    stream_minimax_completions, stream_openai_completions, stream_zai_completions,
+    OpenAICompletionsOptions,
 };
 use crate::types::{
-    AnthropicMessages, Api, AssistantMessage, Context, KnownProvider, MinimaxCompletions, Model,
-    OpenAICompletions, Provider, ZaiCompletions,
+    AnthropicMessages, Api, AssistantMessage, Context, GoogleGenerativeAi, KnownProvider,
+    MinimaxCompletions, Model, OpenAICompletions, Provider, ZaiCompletions,
 };
 
 /// Stream a completion from an OpenAI-compatible model.
@@ -99,9 +100,15 @@ where
         Api::OpenAIResponses => Err(Error::InvalidResponse(
             "OpenAI Responses provider not yet implemented".to_string(),
         )),
-        Api::GoogleGenerativeAi => Err(Error::InvalidResponse(
-            "Google Generative AI provider not yet implemented".to_string(),
-        )),
+        Api::GoogleGenerativeAi => {
+            let model_ptr = model as *const Model<TApi> as *const Model<GoogleGenerativeAi>;
+            let google_model = unsafe { &*model_ptr };
+            Ok(stream_google_generative_ai(
+                google_model,
+                context,
+                resolved_options,
+            ))
+        }
         Api::GoogleVertex => Err(Error::InvalidResponse(
             "Google Vertex provider not yet implemented".to_string(),
         )),
@@ -263,6 +270,34 @@ mod tests {
     async fn stream_dispatches_featherless_through_openai_completions_provider() {
         let model = featherless_test_model("http://127.0.0.1:1/v1/chat/completions");
         assert_dispatches_to_provider(model, Api::OpenAICompletions).await;
+    }
+
+    fn google_test_model(base_url: &str) -> Model<GoogleGenerativeAi> {
+        Model {
+            id: "gemini-2.5-flash".to_string(),
+            name: "Gemini 2.5 Flash".to_string(),
+            api: GoogleGenerativeAi,
+            provider: Provider::Known(KnownProvider::Google),
+            base_url: base_url.to_string(),
+            reasoning: true,
+            input: vec![InputType::Text],
+            cost: ModelCost {
+                input: 0.0,
+                output: 0.0,
+                cache_read: 0.0,
+                cache_write: 0.0,
+            },
+            context_window: 1_048_576,
+            max_tokens: 65_536,
+            headers: None,
+            compat: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_dispatches_to_google_provider() {
+        let model = google_test_model("http://127.0.0.1:1");
+        assert_dispatches_to_provider(model, Api::GoogleGenerativeAi).await;
     }
 
     #[test]
