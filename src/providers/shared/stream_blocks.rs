@@ -26,6 +26,10 @@ pub(crate) struct ReasoningDelta<'a> {
     pub signature: &'a str,
 }
 
+pub(crate) const REASONING_CONTENT_SIGNATURE: &str = "reasoning_content";
+pub(crate) const REASONING_SIGNATURE: &str = "reasoning";
+pub(crate) const REASONING_TEXT_SIGNATURE: &str = "reasoning_text";
+
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct OpenAiLikeToolCallDelta {
     pub id: Option<String>,
@@ -39,23 +43,53 @@ pub(crate) struct OpenAiLikeFunctionDelta {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(bound(deserialize = "TDelta: Deserialize<'de>"))]
-pub(crate) struct OpenAiLikeStreamChunk<TDelta> {
+pub(crate) struct OpenAiLikeStreamChunk {
     #[serde(default)]
-    pub choices: Vec<OpenAiLikeStreamChoice<TDelta>>,
+    pub choices: Vec<OpenAiLikeStreamChoice>,
     pub usage: Option<OpenAiLikeStreamUsage>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(bound(deserialize = "TDelta: Deserialize<'de>"))]
-pub(crate) struct OpenAiLikeStreamChoice<TDelta> {
-    pub delta: Option<TDelta>,
+pub(crate) struct OpenAiLikeStreamChoice {
+    pub delta: Option<OpenAiLikeStreamDelta>,
     pub finish_reason: Option<String>,
 }
 
-pub(crate) struct OpenAiLikeChunkPrelude<'a, TDelta> {
-    pub delta: &'a TDelta,
-    tool_calls: Option<&'a [OpenAiLikeToolCallDelta]>,
+#[derive(Debug, Deserialize)]
+pub(crate) struct OpenAiLikeStreamDelta {
+    pub content: Option<String>,
+    pub reasoning_details: Option<Vec<ReasoningDetail>>,
+    pub reasoning_content: Option<String>,
+    pub reasoning: Option<String>,
+    pub reasoning_text: Option<String>,
+    pub tool_calls: Option<Vec<OpenAiLikeToolCallDelta>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ReasoningDetail {
+    pub text: Option<String>,
+}
+
+/// Extract reasoning from the first non-empty of the field names providers
+/// use for it, tagging the delta with the source field as its signature.
+pub(crate) fn extract_reasoning(delta: &OpenAiLikeStreamDelta) -> Option<ReasoningDelta<'_>> {
+    [
+        (
+            delta.reasoning_content.as_deref(),
+            REASONING_CONTENT_SIGNATURE,
+        ),
+        (delta.reasoning.as_deref(), REASONING_SIGNATURE),
+        (delta.reasoning_text.as_deref(), REASONING_TEXT_SIGNATURE),
+    ]
+    .into_iter()
+    .find_map(|(text, signature)| {
+        text.filter(|text| !text.is_empty())
+            .map(|text| ReasoningDelta { text, signature })
+    })
+}
+
+pub(crate) struct OpenAiLikeChunkPrelude<'a> {
+    pub delta: &'a OpenAiLikeStreamDelta,
     prioritize_tool_calls: bool,
 }
 
@@ -167,18 +201,13 @@ pub(crate) fn update_usage_from_chunk(
     };
 }
 
-pub(crate) fn prepare_openai_like_chunk<'a, TDelta, FStopReason, FToolCalls>(
-    chunk: &'a OpenAiLikeStreamChunk<TDelta>,
+pub(crate) fn prepare_openai_like_chunk<'a>(
+    chunk: &'a OpenAiLikeStreamChunk,
     output: &mut AssistantMessage,
     sender: &mut EventStreamSender,
     current_block: &mut Option<CurrentBlock>,
-    map_stop_reason: FStopReason,
-    delta_tool_calls: FToolCalls,
-) -> Option<OpenAiLikeChunkPrelude<'a, TDelta>>
-where
-    FStopReason: Fn(&str) -> StopReason,
-    FToolCalls: Fn(&'a TDelta) -> Option<&'a [OpenAiLikeToolCallDelta]>,
-{
+    map_stop_reason: impl Fn(&str) -> StopReason,
+) -> Option<OpenAiLikeChunkPrelude<'a>> {
     if let Some(usage) = &chunk.usage {
         update_usage_from_chunk(usage, output);
     }
@@ -190,25 +219,23 @@ where
     }
 
     let delta = choice.delta.as_ref()?;
-    let tool_calls = delta_tool_calls(delta);
     let prioritize_tool_calls =
-        matches!(current_block, Some(CurrentBlock::ToolCall { .. })) && tool_calls.is_some();
+        matches!(current_block, Some(CurrentBlock::ToolCall { .. })) && delta.tool_calls.is_some();
 
     if prioritize_tool_calls {
-        if let Some(tool_call_deltas) = tool_calls {
+        if let Some(tool_call_deltas) = &delta.tool_calls {
             handle_tool_calls(tool_call_deltas, output, sender, current_block);
         }
     }
 
     Some(OpenAiLikeChunkPrelude {
         delta,
-        tool_calls,
         prioritize_tool_calls,
     })
 }
 
-pub(crate) fn apply_deferred_tool_calls<TDelta>(
-    prelude: OpenAiLikeChunkPrelude<'_, TDelta>,
+pub(crate) fn apply_deferred_tool_calls(
+    prelude: OpenAiLikeChunkPrelude<'_>,
     output: &mut AssistantMessage,
     sender: &mut EventStreamSender,
     current_block: &mut Option<CurrentBlock>,
@@ -217,7 +244,7 @@ pub(crate) fn apply_deferred_tool_calls<TDelta>(
         return;
     }
 
-    if let Some(tool_call_deltas) = prelude.tool_calls {
+    if let Some(tool_call_deltas) = &prelude.delta.tool_calls {
         handle_tool_calls(tool_call_deltas, output, sender, current_block);
     }
 }

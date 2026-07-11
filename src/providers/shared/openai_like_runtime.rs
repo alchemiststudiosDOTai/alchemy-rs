@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 
+use futures::future::BoxFuture;
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
 
+use crate::providers::OpenAICompletionsOptions;
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEvent, EventStreamSender, Provider, StopReason,
-    StopReasonError, StopReasonSuccess, Usage,
+    Api, ApiType, AssistantMessage, AssistantMessageEvent, AssistantMessageEventStream, Context,
+    EventStreamSender, Model, Provider, StopReason, StopReasonError, StopReasonSuccess, Usage,
 };
 
 use super::http::build_http_client;
-use super::stream_blocks::{finish_current_block, CurrentBlock};
+use super::stream_blocks::{finish_current_block, CurrentBlock, OpenAiLikeStreamChunk};
 use super::timestamp::unix_timestamp_millis;
 
 pub(crate) struct OpenAiLikeRequest<'a> {
@@ -22,20 +24,17 @@ pub(crate) struct OpenAiLikeRequest<'a> {
 }
 
 impl<'a> OpenAiLikeRequest<'a> {
-    pub(crate) fn new(
-        provider: &'a Provider,
-        base_url: &'a str,
-        api_key: &'a Option<String>,
-        model_headers: Option<&'a HashMap<String, String>>,
-        request_headers: Option<&'a HashMap<String, String>>,
+    pub(crate) fn new<TApi: ApiType>(
+        model: &'a Model<TApi>,
+        options: &'a OpenAICompletionsOptions,
         params: &'a serde_json::Value,
     ) -> Self {
         Self {
-            provider,
-            base_url,
-            api_key,
-            model_headers,
-            request_headers,
+            provider: &model.provider,
+            base_url: &model.base_url,
+            api_key: &options.api_key,
+            model_headers: model.headers.as_ref(),
+            request_headers: options.headers.as_ref(),
             params,
         }
     }
@@ -84,25 +83,61 @@ pub(crate) fn push_stream_done(output: &AssistantMessage, sender: &mut EventStre
     });
 }
 
-pub(crate) async fn run_openai_like_stream<TChunk, TState, FChunk, FBeforeFinish>(
+/// The per-provider streaming body driven by [`spawn_openai_like_stream`].
+///
+/// Plain `fn` (not a closure trait) so the returned future can borrow its
+/// arguments; non-capturing closures at call sites coerce to it.
+pub(crate) type RunStreamFn<TApi> = for<'a> fn(
+    &'a Model<TApi>,
+    &'a Context,
+    &'a OpenAICompletionsOptions,
+    &'a mut AssistantMessage,
+    &'a mut EventStreamSender,
+) -> BoxFuture<'a, Result<(), crate::Error>>;
+
+/// Spawn the streaming task shared by every OpenAI-like provider: create the
+/// event stream, initialize the output message, run the provider body, and
+/// convert any error into a stream error event.
+pub(crate) fn spawn_openai_like_stream<TApi>(
+    model: &Model<TApi>,
+    context: &Context,
+    options: OpenAICompletionsOptions,
+    run_stream: RunStreamFn<TApi>,
+) -> AssistantMessageEventStream
+where
+    TApi: ApiType,
+    Model<TApi>: Clone + Send + 'static,
+{
+    let (stream, mut sender) = AssistantMessageEventStream::new();
+    let api = model.api.api();
+    let model = model.clone();
+    let context = context.clone();
+
+    tokio::spawn(async move {
+        let mut output = initialize_output(api, model.provider.clone(), model.id.clone());
+
+        if let Err(error) = run_stream(&model, &context, &options, &mut output, &mut sender).await {
+            push_stream_error(&mut output, &mut sender, error);
+        }
+    });
+
+    stream
+}
+
+/// Send the request and drive the SSE stream through `on_event`.
+///
+/// `on_event` receives `Some(chunk)` for each parsed chunk and a final `None`
+/// once the stream ends, so handlers can flush any buffered state before the
+/// current block is finished.
+pub(crate) async fn run_openai_like_stream<F>(
     request: OpenAiLikeRequest<'_>,
     output: &mut AssistantMessage,
     sender: &mut EventStreamSender,
-    state: &mut TState,
-    mut process_chunk: FChunk,
-    mut before_finish: FBeforeFinish,
+    mut on_event: F,
 ) -> Result<(), crate::Error>
 where
-    TChunk: DeserializeOwned,
-    FChunk: FnMut(
-        TChunk,
-        &mut TState,
-        &mut AssistantMessage,
-        &mut EventStreamSender,
-        &mut Option<CurrentBlock>,
-    ),
-    FBeforeFinish: FnMut(
-        &mut TState,
+    F: FnMut(
+        Option<OpenAiLikeStreamChunk>,
         &mut AssistantMessage,
         &mut EventStreamSender,
         &mut Option<CurrentBlock>,
@@ -118,41 +153,16 @@ where
 
     let mut current_block: Option<CurrentBlock> = None;
 
-    process_sse_stream::<TChunk, _>(response, |chunk| {
-        process_chunk(chunk, state, output, sender, &mut current_block);
+    process_sse_stream::<OpenAiLikeStreamChunk, _>(response, |chunk| {
+        on_event(Some(chunk), output, sender, &mut current_block);
     })
     .await?;
 
-    before_finish(state, output, sender, &mut current_block);
+    on_event(None, output, sender, &mut current_block);
     finish_current_block(&mut current_block, output, sender);
     push_stream_done(output, sender);
 
     Ok(())
-}
-
-pub(crate) async fn run_openai_like_stream_without_state<TChunk, FChunk>(
-    request: OpenAiLikeRequest<'_>,
-    output: &mut AssistantMessage,
-    sender: &mut EventStreamSender,
-    mut process_chunk: FChunk,
-) -> Result<(), crate::Error>
-where
-    TChunk: DeserializeOwned,
-    FChunk: FnMut(TChunk, &mut AssistantMessage, &mut EventStreamSender, &mut Option<CurrentBlock>),
-{
-    let mut state = ();
-
-    run_openai_like_stream::<TChunk, _, _, _>(
-        request,
-        output,
-        sender,
-        &mut state,
-        |chunk, _state, output, sender, current_block| {
-            process_chunk(chunk, output, sender, current_block);
-        },
-        |_state, _output, _sender, _current_block| {},
-    )
-    .await
 }
 
 fn done_reason_from_stop_reason(stop_reason: StopReason) -> StopReasonSuccess {
@@ -192,40 +202,7 @@ where
     TChunk: DeserializeOwned,
     F: FnMut(TChunk),
 {
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
-    let mut done_received = false;
-
-    while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-        while let Some(line_end) = buffer.find('\n') {
-            let line = buffer[..line_end].trim().to_string();
-            buffer = buffer[line_end + 1..].to_string();
-
-            if line.is_empty() || line.starts_with(':') {
-                continue;
-            }
-
-            if let Some(data) = sse_field_value(&line, "data") {
-                if data == "[DONE]" {
-                    done_received = true;
-                    break;
-                }
-
-                if let Ok(chunk) = serde_json::from_str::<TChunk>(data) {
-                    on_chunk(chunk);
-                }
-            }
-        }
-
-        if done_received {
-            break;
-        }
-    }
-
-    Ok(())
+    process_sse_stream_with_event(response, |_event_type, chunk| on_chunk(chunk)).await
 }
 
 pub(crate) async fn process_sse_stream_with_event<TChunk, F>(
@@ -239,6 +216,7 @@ where
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut current_event_type = String::new();
+    let mut done_received = false;
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result?;
@@ -258,8 +236,8 @@ where
             }
 
             if let Some(data) = sse_field_value(&line, "data") {
-                let data = data.trim();
                 if data == "[DONE]" {
+                    done_received = true;
                     break;
                 }
                 if let Ok(parsed) = serde_json::from_str::<TChunk>(data) {
@@ -267,6 +245,10 @@ where
                 }
                 current_event_type.clear();
             }
+        }
+
+        if done_received {
+            break;
         }
     }
 

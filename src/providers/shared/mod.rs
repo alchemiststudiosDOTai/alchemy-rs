@@ -17,11 +17,13 @@ pub(crate) use openai_like_messages::{
 };
 pub(crate) use openai_like_runtime::{
     initialize_output, process_sse_stream_with_event, push_stream_done, push_stream_error,
-    run_openai_like_stream, run_openai_like_stream_without_state, OpenAiLikeRequest,
+    run_openai_like_stream, spawn_openai_like_stream, OpenAiLikeRequest,
 };
 pub(crate) use stream_blocks::finish_current_block;
+#[cfg(test)]
+pub(crate) use stream_blocks::REASONING_CONTENT_SIGNATURE;
 pub(crate) use stream_blocks::{
-    apply_deferred_tool_calls, handle_reasoning_delta, handle_text_delta, handle_tool_calls,
-    map_stop_reason, prepare_openai_like_chunk, update_usage_from_chunk, CurrentBlock,
-    OpenAiLikeStreamChunk, OpenAiLikeToolCallDelta, ReasoningDelta,
+    apply_deferred_tool_calls, extract_reasoning, handle_reasoning_delta, handle_text_delta,
+    map_stop_reason, prepare_openai_like_chunk, CurrentBlock, OpenAiLikeStreamChunk,
+    OpenAiLikeStreamDelta, ReasoningDelta,
 };

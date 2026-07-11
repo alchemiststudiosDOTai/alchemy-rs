@@ -3,17 +3,16 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-#[cfg(test)]
-use super::shared::finish_current_block;
 use super::shared::{
-    convert_messages, convert_tools, handle_reasoning_delta, handle_text_delta, handle_tool_calls,
-    initialize_output, map_stop_reason, push_stream_error, run_openai_like_stream_without_state,
-    update_usage_from_chunk, AssistantThinkingMode, CurrentBlock, OpenAiLikeMessageOptions,
-    OpenAiLikeRequest, OpenAiLikeStreamChunk, OpenAiLikeToolCallDelta, ReasoningDelta,
-    SystemPromptRole,
+    apply_deferred_tool_calls, convert_messages, convert_tools, extract_reasoning,
+    handle_reasoning_delta, handle_text_delta, map_stop_reason, prepare_openai_like_chunk,
+    run_openai_like_stream, spawn_openai_like_stream, AssistantThinkingMode, CurrentBlock,
+    OpenAiLikeMessageOptions, OpenAiLikeRequest, OpenAiLikeStreamChunk, SystemPromptRole,
 };
+#[cfg(test)]
+use super::shared::{finish_current_block, initialize_output};
 use crate::types::{
-    Api, AssistantMessage, AssistantMessageEventStream, Context, EventStreamSender, KnownProvider,
+    AssistantMessage, AssistantMessageEventStream, Context, EventStreamSender, KnownProvider,
     MaxTokensField, Model, OpenAICompletions, OpenAICompletionsCompat, Provider,
 };
 
@@ -65,8 +64,9 @@ struct ResolvedCompat {
     requires_mistral_tool_ids: bool,
 }
 
-impl From<(ResolvedCompat, &OpenAICompletionsCompat)> for ResolvedCompat {
-    fn from((detected, explicit): (ResolvedCompat, &OpenAICompletionsCompat)) -> Self {
+impl ResolvedCompat {
+    /// Apply explicit model-specified overrides on top of detected defaults.
+    fn with_overrides(detected: Self, explicit: &OpenAICompletionsCompat) -> Self {
         Self {
             supports_store: explicit.supports_store.unwrap_or(detected.supports_store),
             supports_developer_role: explicit
@@ -103,37 +103,17 @@ pub fn stream_openai_completions(
     context: &Context,
     options: OpenAICompletionsOptions,
 ) -> AssistantMessageEventStream {
-    let (stream, sender) = AssistantMessageEventStream::new();
-
-    let model = model.clone();
-    let context = context.clone();
-
-    tokio::spawn(async move {
-        run_stream(model, context, options, sender).await;
-    });
-
-    stream
+    spawn_openai_like_stream(
+        model,
+        context,
+        options,
+        |model, context, options, output, sender| {
+            Box::pin(run_stream(model, context, options, output, sender))
+        },
+    )
 }
 
 async fn run_stream(
-    model: Model<OpenAICompletions>,
-    context: Context,
-    options: OpenAICompletionsOptions,
-    mut sender: EventStreamSender,
-) {
-    let mut output = initialize_output(
-        Api::OpenAICompletions,
-        model.provider.clone(),
-        model.id.clone(),
-    );
-
-    if let Err(error) = run_stream_inner(&model, &context, &options, &mut output, &mut sender).await
-    {
-        push_stream_error(&mut output, &mut sender, error);
-    }
-}
-
-async fn run_stream_inner(
     model: &Model<OpenAICompletions>,
     context: &Context,
     options: &OpenAICompletionsOptions,
@@ -142,84 +122,41 @@ async fn run_stream_inner(
 ) -> Result<(), crate::Error> {
     let compat = resolve_compat(model);
     let params = build_params(model, context, options, &compat);
-    let request = OpenAiLikeRequest::new(
-        &model.provider,
-        &model.base_url,
-        &options.api_key,
-        model.headers.as_ref(),
-        options.headers.as_ref(),
-        &params,
-    );
 
-    run_openai_like_stream_without_state::<StreamChunk, _>(
-        request,
+    run_openai_like_stream(
+        OpenAiLikeRequest::new(model, options, &params),
         output,
         sender,
         |chunk, output, sender, current_block| {
-            process_chunk(&chunk, output, sender, current_block);
+            if let Some(chunk) = chunk {
+                process_chunk(&chunk, output, sender, current_block);
+            }
         },
     )
     .await
 }
 
-const REASONING_CONTENT_FIELD: &str = "reasoning_content";
-const REASONING_FIELD: &str = "reasoning";
-const REASONING_TEXT_FIELD: &str = "reasoning_text";
-
 fn process_chunk(
-    chunk: &StreamChunk,
+    chunk: &OpenAiLikeStreamChunk,
     output: &mut AssistantMessage,
     sender: &mut EventStreamSender,
     current_block: &mut Option<CurrentBlock>,
 ) {
-    if let Some(usage) = &chunk.usage {
-        update_usage_from_chunk(usage, output);
-    }
-
-    let Some(choice) = chunk.choices.first() else {
+    let Some(prelude) =
+        prepare_openai_like_chunk(chunk, output, sender, current_block, map_stop_reason)
+    else {
         return;
     };
 
-    if let Some(reason) = &choice.finish_reason {
-        output.stop_reason = map_stop_reason(reason);
-    }
-
-    let Some(delta) = &choice.delta else {
-        return;
-    };
-
-    if let Some(content) = delta.content.as_deref() {
+    if let Some(content) = prelude.delta.content.as_deref() {
         handle_text_delta(content, output, sender, current_block);
     }
 
-    if let Some(reasoning) = extract_reasoning(delta) {
+    if let Some(reasoning) = extract_reasoning(prelude.delta) {
         handle_reasoning_delta(reasoning, output, sender, current_block);
     }
 
-    if let Some(tool_calls) = &delta.tool_calls {
-        handle_tool_calls(tool_calls, output, sender, current_block);
-    }
-}
-
-fn extract_reasoning(delta: &StreamDelta) -> Option<ReasoningDelta<'_>> {
-    if let Some(text) = delta.reasoning_content.as_deref() {
-        return Some(ReasoningDelta {
-            text,
-            signature: REASONING_CONTENT_FIELD,
-        });
-    }
-
-    if let Some(text) = delta.reasoning.as_deref() {
-        return Some(ReasoningDelta {
-            text,
-            signature: REASONING_FIELD,
-        });
-    }
-
-    delta.reasoning_text.as_deref().map(|text| ReasoningDelta {
-        text,
-        signature: REASONING_TEXT_FIELD,
-    })
+    apply_deferred_tool_calls(prelude, output, sender, current_block);
 }
 
 fn build_params(
@@ -345,66 +282,32 @@ fn resolve_compat(model: &Model<OpenAICompletions>) -> ResolvedCompat {
     let detected = detect_compat(model);
 
     match model.compat.as_ref() {
-        Some(explicit) => ResolvedCompat::from((detected, explicit)),
+        Some(explicit) => ResolvedCompat::with_overrides(detected, explicit),
         None => detected,
     }
-}
-
-type StreamChunk = OpenAiLikeStreamChunk<StreamDelta>;
-
-#[derive(Debug, Deserialize)]
-struct StreamDelta {
-    content: Option<String>,
-    reasoning_content: Option<String>,
-    reasoning: Option<String>,
-    reasoning_text: Option<String>,
-    tool_calls: Option<Vec<OpenAiLikeToolCallDelta>>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_helpers::{
-        assert_final_message_shape, build_final_message_shape_chunks, ExpectedFinalMessageShape,
+        assert_final_message_shape, build_final_message_shape_chunks, make_test_model,
+        ExpectedFinalMessageShape,
     };
     use crate::types::{
-        Context, InputType, MaxTokensField, Message, ModelCost, StopReason, UserContent,
-        UserMessage,
+        Api, Context, MaxTokensField, Message, StopReason, UserContent, UserMessage,
     };
     use futures::executor::block_on;
     use futures::StreamExt;
     use serde_json::json;
 
-    fn make_test_model(
-        id: &str,
-        name: &str,
-        provider: KnownProvider,
-        base_url: &str,
-    ) -> Model<OpenAICompletions> {
-        Model {
-            id: id.to_string(),
-            name: name.to_string(),
-            api: OpenAICompletions,
-            provider: Provider::Known(provider),
-            base_url: base_url.to_string(),
-            reasoning: false,
-            input: vec![InputType::Text],
-            cost: ModelCost {
-                input: 0.0,
-                output: 0.0,
-                cache_read: 0.0,
-                cache_write: 0.0,
-            },
-            context_window: 128_000,
-            max_tokens: 4_096,
-            headers: None,
-            compat: None,
-        }
+    fn make_model(provider: KnownProvider, id: &str, base_url: &str) -> Model<OpenAICompletions> {
+        make_test_model(OpenAICompletions, provider, id, base_url, false)
     }
 
     fn process_chunks_for_test(
         model: &Model<OpenAICompletions>,
-        chunks: Vec<StreamChunk>,
+        chunks: Vec<OpenAiLikeStreamChunk>,
     ) -> AssistantMessage {
         let (mut stream, mut sender) = AssistantMessageEventStream::new();
         let mut output = initialize_output(
@@ -427,10 +330,9 @@ mod tests {
 
     #[test]
     fn detect_compat_for_openai_defaults() {
-        let model = make_test_model(
-            "gpt-4",
-            "GPT-4",
+        let model = make_model(
             KnownProvider::OpenAI,
+            "gpt-4",
             "https://api.openai.com/v1/chat/completions",
         );
 
@@ -444,10 +346,9 @@ mod tests {
 
     #[test]
     fn detect_compat_for_mistral_defaults() {
-        let model = make_test_model(
-            "mistral-large",
-            "Mistral Large",
+        let model = make_model(
             KnownProvider::Mistral,
+            "mistral-large",
             "https://api.mistral.ai/v1/chat/completions",
         );
 
@@ -461,10 +362,9 @@ mod tests {
 
     #[test]
     fn detect_compat_for_featherless_defaults() {
-        let model = make_test_model(
-            "moonshotai/Kimi-K2.5",
-            "Kimi K2.5",
+        let model = make_model(
             KnownProvider::Featherless,
+            "moonshotai/Kimi-K2.5",
             "https://api.featherless.ai/v1/chat/completions",
         );
 
@@ -479,10 +379,9 @@ mod tests {
 
     #[test]
     fn build_params_uses_max_tokens_for_featherless() {
-        let model = make_test_model(
-            "moonshotai/Kimi-K2.5",
-            "Kimi K2.5",
+        let model = make_model(
             KnownProvider::Featherless,
+            "moonshotai/Kimi-K2.5",
             "https://api.featherless.ai/v1/chat/completions",
         );
         let context = Context {
@@ -510,13 +409,12 @@ mod tests {
 
     #[test]
     fn stream_featherless_openai_compatible_runtime_returns_expected_message_shape() {
-        let model = make_test_model(
-            "moonshotai/Kimi-K2.5",
-            "Kimi K2.5",
+        let model = make_model(
             KnownProvider::Featherless,
+            "moonshotai/Kimi-K2.5",
             "https://api.featherless.ai/v1/chat/completions",
         );
-        let chunks = build_final_message_shape_chunks::<StreamChunk>(json!({
+        let chunks = build_final_message_shape_chunks(json!({
             "reasoning": "thinking"
         }));
         let result = process_chunks_for_test(&model, chunks);
