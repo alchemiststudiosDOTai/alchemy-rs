@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Removed
+- Unused utility modules `utils::json_parse`, `utils::overflow`, `utils::sanitize`, and `utils::validation` (and their `lib.rs` re-exports); nothing in the crate's runtime paths used them
+- Dead error variants `Error::ToolValidationFailed`, `Error::ToolNotFound`, and `Error::ContextOverflow`, which were only constructed by the removed modules
+- Unused dependencies `jsonschema`, `regex`, `once_cell`, `async-trait`, `tokio-util`, and `tokio-stream`
+
 ## [0.1.9] - 2026-03-18
 
 ### Added
