@@ -22,6 +22,6 @@ pub use providers::{
     get_env_api_key, stream_anthropic_messages, stream_kimi_messages, stream_minimax_completions,
     stream_openai_completions, OpenAICompletionsOptions,
 };
-pub use stream::{complete, stream, AssistantMessageEventStream};
+pub use stream::{complete, stream, AssistantMessageEventStream, StreamableApi};
 pub use transform::{transform_messages, transform_messages_simple, TargetModel};
 pub use utils::{ThinkFragment, ThinkTagParser};

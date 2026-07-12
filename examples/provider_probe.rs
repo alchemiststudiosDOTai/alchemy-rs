@@ -189,7 +189,7 @@ fn chutes_model() -> Model<OpenAICompletions> {
     }
 }
 
-async fn run_probe<TApi: alchemy_llm::types::ApiType>(
+async fn run_probe<TApi: alchemy_llm::StreamableApi>(
     label: &str,
     model: Model<TApi>,
     scenario: ProbeScenario,
@@ -234,7 +234,7 @@ async fn run_probe<TApi: alchemy_llm::types::ApiType>(
     Ok(())
 }
 
-async fn run_single_pass<TApi: alchemy_llm::types::ApiType>(
+async fn run_single_pass<TApi: alchemy_llm::StreamableApi>(
     model: &Model<TApi>,
     scenario: &ProbeScenario,
     options: Option<OpenAICompletionsOptions>,
