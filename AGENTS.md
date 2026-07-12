@@ -21,7 +21,7 @@
 - `src/stream/` - top-level dispatch and stream collection helpers.
 - `src/types/` - canonical API, content, message, event, model, and usage types.
 - `src/transform.rs` - cross-provider conversation transformation and tool-call replay handling.
-- `src/utils/` - parsing, sanitization, validation, overflow, and think-tag helpers.
+- `src/utils/` - think-tag parsing helpers.
 - `src/test_helpers/` - shared test utilities for inline module tests.
 - `docs/` - compact docs index plus provider architecture / Featherless notes.
 - `rules/` - ast-grep config and boundary rules.

@@ -24,8 +24,4 @@ pub use providers::{
 };
 pub use stream::{complete, stream, AssistantMessageEventStream};
 pub use transform::{transform_messages, transform_messages_simple, TargetModel};
-pub use utils::{
-    is_context_overflow, parse_streaming_json, parse_streaming_json_smart, sanitize_for_api,
-    sanitize_surrogates, validate_tool_arguments, validate_tool_call, ThinkFragment,
-    ThinkTagParser,
-};
+pub use utils::{ThinkFragment, ThinkTagParser};

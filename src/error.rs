@@ -29,15 +29,6 @@ pub enum Error {
 
     #[error("Unknown API: {0}")]
     UnknownApi(String),
-
-    #[error("Tool validation failed: {0}")]
-    ToolValidationFailed(String),
-
-    #[error("Tool not found: {0}")]
-    ToolNotFound(String),
-
-    #[error("Context overflow: model context window exceeded")]
-    ContextOverflow,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
